@@ -1,4 +1,5 @@
-import { useEffect } from "react";
+import React, { useEffect } from "react";
+import { VEHICLE_COLORS } from "@/lib/colors";
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMapEvents } from "react-leaflet";
 import { Point } from "./PointInput";
 import L from "leaflet";
@@ -20,6 +21,10 @@ interface MapViewProps {
   points: Point[];
   route: Point[] | null;
   routeGeometry?: [number, number][][];
+  vehicleGeometries?: [number, number][][][] | null;
+  selectedVehicle?: number | null;
+  onHoverVehicle?: (index: number | null) => void;
+  showLegendOverlay?: boolean;
   onMapClick?: (lat: number, lng: number) => void;
 }
 
@@ -34,7 +39,7 @@ function MapClickHandler({ onMapClick }: { onMapClick?: (lat: number, lng: numbe
   return null;
 }
 
-export function MapView({ points, route, routeGeometry, onMapClick }: MapViewProps) {
+export function MapView({ points, route, routeGeometry, vehicleGeometries, selectedVehicle, onHoverVehicle, showLegendOverlay, onMapClick }: MapViewProps) {
   const center: [number, number] = [52.1326, 5.2913];
 
   return (
@@ -63,7 +68,8 @@ export function MapView({ points, route, routeGeometry, onMapClick }: MapViewPro
           </Marker>
         ))}
         
-        {routeGeometry && routeGeometry.length > 0 && (
+        {/* single-route geometry (old API) */}
+        {routeGeometry && routeGeometry.length > 0 && (!vehicleGeometries || vehicleGeometries.length === 0) && (
           <>
             {routeGeometry.map((segment, index) => (
               <Polyline
@@ -75,6 +81,45 @@ export function MapView({ points, route, routeGeometry, onMapClick }: MapViewPro
               />
             ))}
           </>
+        )}
+
+        {/* per-vehicle geometries */}
+        {vehicleGeometries && vehicleGeometries.length > 0 && (
+          <>
+            {vehicleGeometries.map((vehicleSegments, vi) => {
+              const color = VEHICLE_COLORS[vi % VEHICLE_COLORS.length];
+              return (
+                <React.Fragment key={vi}>
+                  {vehicleSegments.map((segment, si) => (
+                    <Polyline
+                      key={`${vi}-${si}`}
+                      positions={segment}
+                      color={selectedVehicle === null || selectedVehicle === vi ? color : '#cccccc'}
+                      weight={selectedVehicle === vi ? 6 : 4}
+                      opacity={selectedVehicle === null || selectedVehicle === vi ? 0.9 : 0.4}
+                      eventHandlers={{
+                        mouseover: () => onHoverVehicle && onHoverVehicle(vi),
+                        mouseout: () => onHoverVehicle && onHoverVehicle(null),
+                      }}
+                    />
+                  ))}
+                </React.Fragment>
+              );
+            })}
+          </>
+        )}
+
+        {/* floating legend overlay inside map */}
+        {showLegendOverlay && vehicleGeometries && vehicleGeometries.length > 0 && (
+          <div className="absolute top-4 right-4 z-50 bg-white/90 p-3 rounded shadow-lg max-w-xs">
+            <div className="text-sm font-medium mb-2">Legenda</div>
+            {vehicleGeometries.map((_, i) => (
+              <div key={`overlay-${i}`} className="flex items-center gap-2 mb-1">
+                <div style={{ width: 12, height: 12, background: VEHICLE_COLORS[i % VEHICLE_COLORS.length], borderRadius: 3 }} />
+                <div className="text-sm">Voertuig {i + 1}</div>
+              </div>
+            ))}
+          </div>
         )}
       </MapContainer>
     </div>

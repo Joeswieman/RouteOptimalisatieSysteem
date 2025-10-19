@@ -83,6 +83,129 @@ export async function calculateOptimalRoute(
   };
 }
 
+export interface MultiRouteResult {
+  routes: RouteResult[];
+  totalDistance: number;
+  totalDuration: number;
+  meanDuration: number;
+}
+
+export async function calculateOptimalRoutes(
+  points: Point[],
+  vehicleCount: number,
+  startEndPoint?: Point
+): Promise<MultiRouteResult> {
+  // clamp vehicleCount
+  const k = Math.max(1, Math.floor(vehicleCount || 1));
+
+  if (points.length === 0) {
+    return {
+      routes: [],
+      totalDistance: 0,
+      totalDuration: 0,
+      meanDuration: 0,
+    };
+  }
+
+  // If only one vehicle, reuse single-vehicle solver
+  if (k === 1) {
+    const single = await calculateOptimalRoute(points, startEndPoint);
+    return {
+      routes: [single],
+      totalDistance: single.totalDistance,
+      totalDuration: single.totalDuration,
+      meanDuration: single.totalDuration,
+    };
+  }
+
+  // Simple k-means clustering on coordinates (lon=x, lat=y)
+  const pts = points.map((p) => ({ x: p.x, y: p.y, id: p.id }));
+  const centroids: { x: number; y: number }[] = [];
+  for (let i = 0; i < Math.min(k, pts.length); i++) {
+    centroids.push({ x: pts[i].x, y: pts[i].y });
+  }
+
+  let assignments: number[] = new Array(pts.length).fill(0);
+
+  for (let iter = 0; iter < 10; iter++) {
+    // assign
+    for (let i = 0; i < pts.length; i++) {
+      let best = 0;
+      let bestDist = Infinity;
+      for (let c = 0; c < centroids.length; c++) {
+        const dx = pts[i].x - centroids[c].x;
+        const dy = pts[i].y - centroids[c].y;
+        const d = dx * dx + dy * dy;
+        if (d < bestDist) {
+          bestDist = d;
+          best = c;
+        }
+      }
+      assignments[i] = best;
+    }
+
+    // update centroids
+    const sums = new Array(centroids.length).fill(0).map(() => ({ x: 0, y: 0, n: 0 }));
+    for (let i = 0; i < pts.length; i++) {
+      const a = assignments[i];
+      sums[a].x += pts[i].x;
+      sums[a].y += pts[i].y;
+      sums[a].n += 1;
+    }
+
+    let moved = false;
+    for (let c = 0; c < centroids.length; c++) {
+      if (sums[c].n === 0) continue;
+      const nx = sums[c].x / sums[c].n;
+      const ny = sums[c].y / sums[c].n;
+      if (nx !== centroids[c].x || ny !== centroids[c].y) moved = true;
+      centroids[c].x = nx;
+      centroids[c].y = ny;
+    }
+
+    if (!moved) break;
+  }
+
+  // build clusters
+  const clusters: Point[][] = new Array(centroids.length).fill(0).map(() => []);
+  for (let i = 0; i < pts.length; i++) {
+    const c = assignments[i] || 0;
+    const p = points.find((pp) => pp.id === pts[i].id)!;
+    clusters[c].push(p);
+  }
+
+  // If some clusters are empty (because k > points), create empty arrays
+  while (clusters.length < k) clusters.push([]);
+
+  const routes: RouteResult[] = [];
+  let totalDistance = 0;
+  let totalDuration = 0;
+
+  for (let i = 0; i < k; i++) {
+    const clusterPoints = clusters[i];
+    if (clusterPoints.length === 0) {
+      // empty vehicle, zero route (starts and ends at depot)
+      routes.push({ route: [], totalDistance: 0, totalDuration: 0, segments: [], geometry: [] });
+      continue;
+    }
+
+    // re-use the single-route logic but calculate per-cluster
+    const routeResult = await calculateOptimalRoute(clusterPoints, startEndPoint);
+    routes.push(routeResult);
+    totalDistance += routeResult.totalDistance;
+    totalDuration += routeResult.totalDuration;
+  }
+
+  const meanDuration = totalDuration / Math.max(1, k);
+
+  return {
+    routes,
+    totalDistance,
+    totalDuration,
+    meanDuration,
+  };
+}
+
 async function calculateRoadRoute(from: Point, to: Point): Promise<{
   distance: number;
   duration: number;

@@ -7,7 +7,8 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { MapView } from "@/components/MapView";
 import { LocationSearch } from "@/components/LocationSearch";
 import { Card } from "@/components/ui/card";
-import { calculateOptimalRoute } from "@/lib/routing";
+import { calculateOptimalRoute, calculateOptimalRoutes } from "@/lib/routing";
+import { VEHICLE_COLORS } from "@/lib/colors";
 import { useToast } from "@/hooks/use-toast";
 
 const START_END_LOCATION: Point = {
@@ -20,9 +21,14 @@ const START_END_LOCATION: Point = {
 export default function Home() {
   const [points, setPoints] = useState<Point[]>([]);
   const [optimizedRoute, setOptimizedRoute] = useState<Point[] | null>(null);
+  const [multiRoutes, setMultiRoutes] = useState<any[] | null>(null);
   const [routeGeometry, setRouteGeometry] = useState<[number, number][][]>([]);
+  const [vehicleGeometries, setVehicleGeometries] = useState<[number, number][][][] | null>(null);
+  const [showLegendOverlay, setShowLegendOverlay] = useState(false);
+  const [selectedVehicle, setSelectedVehicle] = useState<number | null>(null);
   const [totalDistance, setTotalDistance] = useState(0);
   const [totalDuration, setTotalDuration] = useState(0);
+  const [vehicleCount, setVehicleCount] = useState<number>(1);
   const [calculationTime, setCalculationTime] = useState(0);
   const [isCalculating, setIsCalculating] = useState(false);
   const { toast } = useToast();
@@ -85,24 +91,50 @@ export default function Home() {
     const startTime = performance.now();
 
     try {
-      const result = await calculateOptimalRoute([...points], START_END_LOCATION);
-      const endTime = performance.now();
+      // validate coordinates
+      const invalid = points.find(p => !Number.isFinite(p.x) || !Number.isFinite(p.y));
+      if (invalid) {
+        throw new Error('Controleer punten: alle coördinaten moeten geldige getallen zijn (gebruik "." als decimaal).');
+      }
+      // If user requested multiple vehicles, use the multi-vehicle solver
+      if (vehicleCount > 1) {
+        const multi = await calculateOptimalRoutes([...points], vehicleCount, START_END_LOCATION);
+        const endTime = performance.now();
 
-      setOptimizedRoute(result.route);
-      setRouteGeometry(result.geometry);
-      setTotalDistance(result.totalDistance);
-      setTotalDuration(result.totalDuration);
-      setCalculationTime(Math.round(endTime - startTime));
-      
-      const durationMinutes = Math.round(result.totalDuration / 60);
-      toast({
-        title: "Rondrit berekend!",
-        description: `${result.totalDistance.toFixed(1)} km • ${durationMinutes} min • Start & eind: ${START_END_LOCATION.name}`,
-      });
+        setMultiRoutes(multi.routes);
+        setOptimizedRoute(null);
+        setVehicleGeometries(multi.routes.map(r => r.geometry));
+        setRouteGeometry([]);
+        setTotalDistance(multi.totalDistance);
+        setTotalDuration(multi.totalDuration);
+        setCalculationTime(Math.round(endTime - startTime));
+        toast({
+          title: `Rondrit berekend voor ${vehicleCount} voertuigen`,
+          description: `${multi.totalDistance.toFixed(1)} km • gemiddelde tijd: ${Math.round(multi.meanDuration/60)} min`,
+        });
+      } else {
+        const result = await calculateOptimalRoute([...points], START_END_LOCATION);
+        const endTime = performance.now();
+
+        setOptimizedRoute(result.route);
+        setMultiRoutes(null);
+        setRouteGeometry(result.geometry);
+  setVehicleGeometries(null);
+        setTotalDistance(result.totalDistance);
+        setTotalDuration(result.totalDuration);
+        setCalculationTime(Math.round(endTime - startTime));
+        const durationMinutes = Math.round(result.totalDuration / 60);
+        toast({
+          title: "Rondrit berekend!",
+          description: `${result.totalDistance.toFixed(1)} km • ${durationMinutes} min • Start & eind: ${START_END_LOCATION.name}`,
+        });
+      }
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('Route calculation error:', error);
       toast({
         title: "Fout bij berekenen",
-        description: "Er ging iets mis bij het berekenen van de route",
+        description: message || "Er ging iets mis bij het berekenen van de route",
         variant: "destructive",
       });
     } finally {
@@ -186,6 +218,17 @@ export default function Home() {
 
             {points.length > 0 && (
               <div className="flex gap-3 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <label className="text-sm text-muted-foreground">Voertuigen</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={vehicleCount}
+                    onChange={(e) => setVehicleCount(Math.max(1, parseInt(e.target.value || '1', 10)))}
+                    className="w-20 px-2 py-1 border rounded"
+                    data-testid="input-vehicle-count"
+                  />
+                </div>
                 <Button onClick={addPoint} variant="outline" data-testid="button-add-point">
                   <Plus className="h-4 w-4 mr-2" />
                   Punt Toevoegen
@@ -219,6 +262,52 @@ export default function Home() {
                 />
               </div>
             )}
+            {multiRoutes && (
+              <div className="mt-6 space-y-4">
+                <h3 className="text-lg font-medium">Resultaten per voertuig</h3>
+                <div className="flex items-center justify-between">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-2">
+                    {multiRoutes.map((r, i) => (
+                      <div
+                        key={`legend-${i}`}
+                        className={`flex items-center gap-3 p-2 border rounded cursor-pointer ${selectedVehicle === i ? 'bg-muted/20 border-primary' : ''}`}
+                        onMouseEnter={() => setSelectedVehicle(i)}
+                        onMouseLeave={() => setSelectedVehicle(null)}
+                        onClick={() => setSelectedVehicle(selectedVehicle === i ? null : i)}
+                      >
+                        <div style={{ width: 16, height: 16, background: VEHICLE_COLORS[i % VEHICLE_COLORS.length], borderRadius: 4 }} />
+                        <div>
+                          <div className="text-sm font-medium">Voertuig {i + 1}</div>
+                          <div className="text-xs text-muted-foreground">{r.totalDistance?.toFixed?.(1) ?? 0} km • {Math.round((r.totalDuration ?? 0)/60)} min</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="ml-4">
+                    <button
+                      className="px-3 py-1 border rounded bg-background/80"
+                      onClick={() => setShowLegendOverlay(v => !v)}
+                      data-testid="button-toggle-legend"
+                    >
+                      {showLegendOverlay ? 'Verberg legenda' : 'Toon legenda op kaart'}
+                    </button>
+                  </div>
+                </div>
+                {multiRoutes.map((r, i) => (
+                  <div key={i}>
+                    <Card className="p-4">
+                      <h4 className="font-medium mb-2">Voertuig {i + 1}</h4>
+                      <RouteResult
+                        optimizedRoute={r.route}
+                        totalDistance={r.totalDistance}
+                        totalDuration={r.totalDuration}
+                        calculationTime={calculationTime}
+                      />
+                    </Card>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="lg:sticky lg:top-24 h-[500px] lg:h-[calc(100vh-8rem)]">
@@ -226,6 +315,10 @@ export default function Home() {
               points={[...points, START_END_LOCATION]} 
               route={optimizedRoute}
               routeGeometry={routeGeometry}
+              vehicleGeometries={vehicleGeometries}
+              selectedVehicle={selectedVehicle}
+              onHoverVehicle={setSelectedVehicle}
+              showLegendOverlay={showLegendOverlay}
               onMapClick={addPointFromMap}
             />
           </div>

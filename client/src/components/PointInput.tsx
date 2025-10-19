@@ -33,20 +33,28 @@ export function PointInput({ point, index, onUpdate, onRemove }: PointInputProps
             data-testid={`input-point-name-${index}`}
           />
           <Input
-            type="number"
+            type="text"
             placeholder="Breedtegraad"
-            value={point.y}
-            onChange={(e) => onUpdate({ ...point, y: parseFloat(e.target.value) || 0 })}
+            value={String(point.y ?? '')}
+            onChange={(e) => {
+              const raw = e.target.value.replace(/,/g, '.').replace(/[^0-9.\-]/g, '');
+              const num = raw === '' ? NaN : Number(raw);
+              onUpdate({ ...point, y: num });
+            }}
             data-testid={`input-point-y-${index}`}
-            step="0.0001"
+            inputMode="decimal"
           />
           <Input
-            type="number"
+            type="text"
             placeholder="Lengtegraad"
-            value={point.x}
-            onChange={(e) => onUpdate({ ...point, x: parseFloat(e.target.value) || 0 })}
+            value={String(point.x ?? '')}
+            onChange={(e) => {
+              const raw = e.target.value.replace(/,/g, '.').replace(/[^0-9.\-]/g, '');
+              const num = raw === '' ? NaN : Number(raw);
+              onUpdate({ ...point, x: num });
+            }}
             data-testid={`input-point-x-${index}`}
-            step="0.0001"
+            inputMode="decimal"
           />
         </div>
       </div>
