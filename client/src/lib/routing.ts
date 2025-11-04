@@ -88,6 +88,7 @@ export interface MultiRouteResult {
   totalDistance: number;
   totalDuration: number;
   meanDuration: number;
+  vehicleLoads?: number[]; // laadmeters per voertuig
 }
 
 export async function calculateOptimalRoutes(
@@ -203,6 +204,90 @@ export async function calculateOptimalRoutes(
     totalDistance,
     totalDuration,
     meanDuration,
+  };
+}
+
+export async function calculateOptimalRoutesWithCapacity(
+  points: Point[],
+  vehicleCapacities: number[], // capaciteit per voertuig in laadmeters
+  startEndPoint?: Point
+): Promise<MultiRouteResult> {
+  if (points.length === 0 || vehicleCapacities.length === 0) {
+    return {
+      routes: [],
+      totalDistance: 0,
+      totalDuration: 0,
+      meanDuration: 0,
+      vehicleLoads: [],
+    };
+  }
+
+  // Sorteer punten op laadmeters (descending) voor betere packing
+  const sortedPoints = [...points].sort((a, b) => 
+    (b.loadMeters || 0) - (a.loadMeters || 0)
+  );
+
+  // First-Fit Decreasing algorithm voor bin packing
+  const vehicleAssignments: Point[][] = vehicleCapacities.map(() => []);
+  const vehicleLoads: number[] = vehicleCapacities.map(() => 0);
+
+  for (const point of sortedPoints) {
+    const loadMeters = point.loadMeters || 0;
+    
+    // Zoek eerste voertuig met genoeg capaciteit
+    let assigned = false;
+    for (let i = 0; i < vehicleCapacities.length; i++) {
+      if (vehicleLoads[i] + loadMeters <= vehicleCapacities[i]) {
+        vehicleAssignments[i].push(point);
+        vehicleLoads[i] += loadMeters;
+        assigned = true;
+        break;
+      }
+    }
+
+    // Als geen voertuig genoeg capaciteit heeft, assign aan voertuig met meeste capaciteit
+    // (dit betekent dat we over capaciteit gaan - gebruiker moet gewaarschuwd worden)
+    if (!assigned) {
+      const maxCapIndex = vehicleCapacities.indexOf(Math.max(...vehicleCapacities));
+      vehicleAssignments[maxCapIndex].push(point);
+      vehicleLoads[maxCapIndex] += loadMeters;
+    }
+  }
+
+  // Bereken routes voor elk voertuig
+  const routes: RouteResult[] = [];
+  let totalDistance = 0;
+  let totalDuration = 0;
+
+  for (let i = 0; i < vehicleCapacities.length; i++) {
+    const vehiclePoints = vehicleAssignments[i];
+    
+    if (vehiclePoints.length === 0) {
+      // Leeg voertuig
+      routes.push({ 
+        route: [], 
+        totalDistance: 0, 
+        totalDuration: 0, 
+        segments: [], 
+        geometry: [] 
+      });
+      continue;
+    }
+
+    const routeResult = await calculateOptimalRoute(vehiclePoints, startEndPoint);
+    routes.push(routeResult);
+    totalDistance += routeResult.totalDistance;
+    totalDuration += routeResult.totalDuration;
+  }
+
+  const meanDuration = totalDuration / Math.max(1, vehicleCapacities.filter((_, i) => vehicleAssignments[i].length > 0).length);
+
+  return {
+    routes,
+    totalDistance,
+    totalDuration,
+    meanDuration,
+    vehicleLoads,
   };
 }
 

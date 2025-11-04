@@ -6,9 +6,12 @@ import { RouteResult } from "@/components/RouteResult";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { MapView } from "@/components/MapView";
 import { LocationSearch } from "@/components/LocationSearch";
+import { XmlImporter } from "@/components/XmlImporter";
+import { VehicleSelector } from "@/components/VehicleSelector";
 import { Card } from "@/components/ui/card";
-import { calculateOptimalRoute, calculateOptimalRoutes } from "@/lib/routing";
+import { calculateOptimalRoute, calculateOptimalRoutesWithCapacity } from "@/lib/routing";
 import { VEHICLE_COLORS } from "@/lib/colors";
+import { VEHICLE_TYPES } from "@/lib/vehicles";
 import { useToast } from "@/hooks/use-toast";
 
 const START_END_LOCATION: Point = {
@@ -28,7 +31,8 @@ export default function Home() {
   const [selectedVehicle, setSelectedVehicle] = useState<number | null>(null);
   const [totalDistance, setTotalDistance] = useState(0);
   const [totalDuration, setTotalDuration] = useState(0);
-  const [vehicleCount, setVehicleCount] = useState<number>(1);
+  const [selectedVehicles, setSelectedVehicles] = useState<Map<string, number>>(new Map());
+  const [vehicleLoads, setVehicleLoads] = useState<number[]>([]);
   const [calculationTime, setCalculationTime] = useState(0);
   const [isCalculating, setIsCalculating] = useState(false);
   const { toast } = useToast();
@@ -86,6 +90,20 @@ export default function Home() {
     setOptimizedRoute(null);
   };
 
+  const handleImportPoints = (importedPoints: Point[]) => {
+    setPoints([...points, ...importedPoints]);
+  };
+
+  const handleVehicleChange = (vehicleId: string, count: number) => {
+    const newMap = new Map(selectedVehicles);
+    if (count === 0) {
+      newMap.delete(vehicleId);
+    } else {
+      newMap.set(vehicleId, count);
+    }
+    setSelectedVehicles(newMap);
+  };
+
   const calculateRoute = async () => {
     setIsCalculating(true);
     const startTime = performance.now();
@@ -96,30 +114,55 @@ export default function Home() {
       if (invalid) {
         throw new Error('Controleer punten: alle coördinaten moeten geldige getallen zijn (gebruik "." als decimaal).');
       }
-      // If user requested multiple vehicles, use the multi-vehicle solver
-      if (vehicleCount > 1) {
-        const multi = await calculateOptimalRoutes([...points], vehicleCount, START_END_LOCATION);
+
+      // Bouw lijst van voertuigen met capaciteiten
+      const vehicleCapacities: number[] = [];
+      const vehicleNames: string[] = [];
+      
+      selectedVehicles.forEach((count, vehicleId) => {
+        const vehicleType = VEHICLE_TYPES.find(v => v.id === vehicleId);
+        if (vehicleType) {
+          for (let i = 0; i < count; i++) {
+            vehicleCapacities.push(vehicleType.capacity);
+            vehicleNames.push(vehicleType.name);
+          }
+        }
+      });
+
+      // Als er voertuigen geselecteerd zijn, gebruik capaciteits-bewuste routing
+      if (vehicleCapacities.length > 0) {
+        const multi = await calculateOptimalRoutesWithCapacity([...points], vehicleCapacities, START_END_LOCATION);
         const endTime = performance.now();
 
         setMultiRoutes(multi.routes);
         setOptimizedRoute(null);
         setVehicleGeometries(multi.routes.map(r => r.geometry));
         setRouteGeometry([]);
+        setVehicleLoads(multi.vehicleLoads || []);
         setTotalDistance(multi.totalDistance);
         setTotalDuration(multi.totalDuration);
         setCalculationTime(Math.round(endTime - startTime));
+
+        // Check voor overbelading
+        const overloaded = multi.vehicleLoads?.some((load, i) => load > vehicleCapacities[i]);
+        
         toast({
-          title: `Rondrit berekend voor ${vehicleCount} voertuigen`,
-          description: `${multi.totalDistance.toFixed(1)} km • gemiddelde tijd: ${Math.round(multi.meanDuration/60)} min`,
+          title: `Rondrit berekend voor ${vehicleCapacities.length} voertuigen`,
+          description: overloaded 
+            ? `⚠️ Waarschuwing: Sommige voertuigen zijn overbeladen!`
+            : `${multi.totalDistance.toFixed(1)} km • gemiddelde tijd: ${Math.round(multi.meanDuration/60)} min`,
+          variant: overloaded ? "destructive" : "default",
         });
       } else {
+        // Geen voertuigen geselecteerd, gebruik single-route
         const result = await calculateOptimalRoute([...points], START_END_LOCATION);
         const endTime = performance.now();
 
         setOptimizedRoute(result.route);
         setMultiRoutes(null);
         setRouteGeometry(result.geometry);
-  setVehicleGeometries(null);
+        setVehicleGeometries(null);
+        setVehicleLoads([]);
         setTotalDistance(result.totalDistance);
         setTotalDuration(result.totalDuration);
         setCalculationTime(Math.round(endTime - startTime));
@@ -182,6 +225,13 @@ export default function Home() {
               </Card>
             </div>
 
+            <XmlImporter onImportPoints={handleImportPoints} />
+
+            <VehicleSelector 
+              selectedVehicles={selectedVehicles}
+              onVehicleChange={handleVehicleChange}
+            />
+
             <LocationSearch onSelectLocation={addPointFromLocation} />
 
             <div className="space-y-3">
@@ -218,17 +268,6 @@ export default function Home() {
 
             {points.length > 0 && (
               <div className="flex gap-3 flex-wrap">
-                <div className="flex items-center gap-2">
-                  <label className="text-sm text-muted-foreground">Voertuigen</label>
-                  <input
-                    type="number"
-                    min={1}
-                    value={vehicleCount}
-                    onChange={(e) => setVehicleCount(Math.max(1, parseInt(e.target.value || '1', 10)))}
-                    className="w-20 px-2 py-1 border rounded"
-                    data-testid="input-vehicle-count"
-                  />
-                </div>
                 <Button onClick={addPoint} variant="outline" data-testid="button-add-point">
                   <Plus className="h-4 w-4 mr-2" />
                   Punt Toevoegen
@@ -267,21 +306,46 @@ export default function Home() {
                 <h3 className="text-lg font-medium">Resultaten per voertuig</h3>
                 <div className="flex items-center justify-between">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-2">
-                    {multiRoutes.map((r, i) => (
-                      <div
-                        key={`legend-${i}`}
-                        className={`flex items-center gap-3 p-2 border rounded cursor-pointer ${selectedVehicle === i ? 'bg-muted/20 border-primary' : ''}`}
-                        onMouseEnter={() => setSelectedVehicle(i)}
-                        onMouseLeave={() => setSelectedVehicle(null)}
-                        onClick={() => setSelectedVehicle(selectedVehicle === i ? null : i)}
-                      >
-                        <div style={{ width: 16, height: 16, background: VEHICLE_COLORS[i % VEHICLE_COLORS.length], borderRadius: 4 }} />
-                        <div>
-                          <div className="text-sm font-medium">Voertuig {i + 1}</div>
-                          <div className="text-xs text-muted-foreground">{r.totalDistance?.toFixed?.(1) ?? 0} km • {Math.round((r.totalDuration ?? 0)/60)} min</div>
+                    {multiRoutes.map((r, i) => {
+                      const loadMeters = vehicleLoads[i] || 0;
+                      // Bereken capaciteit van dit voertuig
+                      let vehicleCapacity = 0;
+                      let vehicleIndex = 0;
+                      selectedVehicles.forEach((count, vehicleId) => {
+                        const vehicleType = VEHICLE_TYPES.find(v => v.id === vehicleId);
+                        if (vehicleType) {
+                          for (let j = 0; j < count; j++) {
+                            if (vehicleIndex === i) {
+                              vehicleCapacity = vehicleType.capacity;
+                              break;
+                            }
+                            vehicleIndex++;
+                          }
+                        }
+                      });
+                      const isOverloaded = loadMeters > vehicleCapacity;
+                      
+                      return (
+                        <div
+                          key={`legend-${i}`}
+                          className={`flex items-center gap-3 p-2 border rounded cursor-pointer ${selectedVehicle === i ? 'bg-muted/20 border-primary' : ''} ${isOverloaded ? 'border-destructive' : ''}`}
+                          onMouseEnter={() => setSelectedVehicle(i)}
+                          onMouseLeave={() => setSelectedVehicle(null)}
+                          onClick={() => setSelectedVehicle(selectedVehicle === i ? null : i)}
+                        >
+                          <div style={{ width: 16, height: 16, background: VEHICLE_COLORS[i % VEHICLE_COLORS.length], borderRadius: 4 }} />
+                          <div>
+                            <div className="text-sm font-medium">Voertuig {i + 1}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {r.totalDistance?.toFixed?.(1) ?? 0} km • {Math.round((r.totalDuration ?? 0)/60)} min
+                            </div>
+                            <div className={`text-xs ${isOverloaded ? 'text-destructive font-medium' : 'text-muted-foreground'}`}>
+                              {loadMeters.toFixed(1)} / {vehicleCapacity.toFixed(1)} laadmeters {isOverloaded && '⚠️'}
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                   <div className="ml-4">
                     <button

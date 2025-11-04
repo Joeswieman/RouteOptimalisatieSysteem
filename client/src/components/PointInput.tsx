@@ -8,6 +8,7 @@ export interface Point {
   name: string;
   x: number;
   y: number;
+  loadMeters?: number; // laadmeters voor deze stop
 }
 
 interface PointInputProps {
@@ -25,7 +26,7 @@ export function PointInput({ point, index, onUpdate, onRemove }: PointInputProps
         <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary text-primary-foreground text-sm font-medium">
           {index + 1}
         </div>
-        <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-2">
+        <div className="flex-1 grid grid-cols-1 sm:grid-cols-4 gap-2">
           <Input
             placeholder="Naam locatie"
             value={point.name}
@@ -54,6 +55,18 @@ export function PointInput({ point, index, onUpdate, onRemove }: PointInputProps
               onUpdate({ ...point, x: num });
             }}
             data-testid={`input-point-x-${index}`}
+            inputMode="decimal"
+          />
+          <Input
+            type="text"
+            placeholder="Laadmeters"
+            value={String(point.loadMeters ?? '')}
+            onChange={(e) => {
+              const raw = e.target.value.replace(/,/g, '.').replace(/[^0-9.]/g, '');
+              const num = raw === '' ? undefined : Number(raw);
+              onUpdate({ ...point, loadMeters: num });
+            }}
+            data-testid={`input-point-loadmeters-${index}`}
             inputMode="decimal"
           />
         </div>
