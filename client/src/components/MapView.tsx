@@ -15,6 +15,15 @@ const defaultIcon = L.icon({
   shadowSize: [41, 41]
 });
 
+const greenIcon = L.icon({
+  iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png",
+  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41]
+});
+
 L.Marker.prototype.options.icon = defaultIcon;
 
 interface MapViewProps {
@@ -56,17 +65,24 @@ export function MapView({ points, route, routeGeometry, vehicleGeometries, selec
         />
         <MapClickHandler onMapClick={onMapClick} />
         
-        {points.map((point, index) => (
-          <Marker key={point.id} position={[point.y, point.x]}>
-            <Popup>
-              <div>
-                <strong>{point.name || `Punt ${index + 1}`}</strong>
-                <br />
-                Coördinaten: {point.y.toFixed(4)}, {point.x.toFixed(4)}
-              </div>
-            </Popup>
-          </Marker>
-        ))}
+        {points.map((point, index) => {
+          const isStartEnd = point.id === 'start-end';
+          return (
+            <Marker 
+              key={point.id} 
+              position={[point.y, point.x]}
+              icon={isStartEnd ? greenIcon : defaultIcon}
+            >
+              <Popup>
+                <div>
+                  <strong>{point.name || `Punt ${index + 1}`}</strong>
+                  <br />
+                  Coördinaten: {point.y.toFixed(4)}, {point.x.toFixed(4)}
+                </div>
+              </Popup>
+            </Marker>
+          );
+        })}
         
         {/* single-route geometry (old API) */}
         {routeGeometry && routeGeometry.length > 0 && (!vehicleGeometries || vehicleGeometries.length === 0) && (

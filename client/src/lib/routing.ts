@@ -89,6 +89,8 @@ export interface MultiRouteResult {
   totalDuration: number;
   meanDuration: number;
   vehicleLoads?: number[]; // laadmeters per voertuig
+  vehicleNames?: string[]; // namen van voertuigen (bv. "Trailer", "Bakwagen")
+  vehicleCapacities?: number[]; // capaciteiten per voertuig
 }
 
 export async function calculateOptimalRoutes(
@@ -210,6 +212,7 @@ export async function calculateOptimalRoutes(
 export async function calculateOptimalRoutesWithCapacity(
   points: Point[],
   vehicleCapacities: number[], // capaciteit per voertuig in laadmeters
+  vehicleNames?: string[], // namen van voertuigen
   startEndPoint?: Point
 ): Promise<MultiRouteResult> {
   if (points.length === 0 || vehicleCapacities.length === 0) {
@@ -219,38 +222,120 @@ export async function calculateOptimalRoutesWithCapacity(
       totalDuration: 0,
       meanDuration: 0,
       vehicleLoads: [],
+      vehicleNames: vehicleNames || [],
+      vehicleCapacities: vehicleCapacities,
     };
   }
 
-  // Sorteer punten op laadmeters (descending) voor betere packing
+  // Stap 1: Sorteer punten op laadmeters (descending) voor betere packing
   const sortedPoints = [...points].sort((a, b) => 
     (b.loadMeters || 0) - (a.loadMeters || 0)
   );
 
-  // First-Fit Decreasing algorithm voor bin packing
-  const vehicleAssignments: Point[][] = vehicleCapacities.map(() => []);
+  // Stap 2: Geografische clustering met k-means voor betere route-verdeling
+  // Dit zorgt ervoor dat punten die dicht bij elkaar liggen in hetzelfde voertuig komen
+  const k = vehicleCapacities.length;
+  const pts = sortedPoints.map((p) => ({ x: p.x, y: p.y, id: p.id, loadMeters: p.loadMeters || 0 }));
+  
+  // Initialiseer centroids - spread ze goed over de punten
+  const centroids: { x: number; y: number }[] = [];
+  const step = Math.floor(pts.length / k);
+  for (let i = 0; i < k; i++) {
+    const idx = Math.min(i * step, pts.length - 1);
+    centroids.push({ x: pts[idx].x, y: pts[idx].y });
+  }
+
+  // K-means met capaciteitsbeperking
+  let assignments: number[] = new Array(pts.length).fill(0);
   const vehicleLoads: number[] = vehicleCapacities.map(() => 0);
 
-  for (const point of sortedPoints) {
-    const loadMeters = point.loadMeters || 0;
+  for (let iter = 0; iter < 20; iter++) {
+    // Reset loads
+    vehicleLoads.fill(0);
+    const tempAssignments = new Array(pts.length).fill(-1);
     
-    // Zoek eerste voertuig met genoeg capaciteit
-    let assigned = false;
-    for (let i = 0; i < vehicleCapacities.length; i++) {
-      if (vehicleLoads[i] + loadMeters <= vehicleCapacities[i]) {
-        vehicleAssignments[i].push(point);
-        vehicleLoads[i] += loadMeters;
-        assigned = true;
-        break;
+    // Assign points to nearest cluster met capaciteitscheck
+    const unassigned: number[] = [];
+    
+    for (let i = 0; i < pts.length; i++) {
+      let best = -1;
+      let bestDist = Infinity;
+      
+      // Zoek dichtstbijzijnde cluster met genoeg capaciteit
+      for (let c = 0; c < centroids.length; c++) {
+        const dx = pts[i].x - centroids[c].x;
+        const dy = pts[i].y - centroids[c].y;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        
+        // Check of er nog capaciteit is
+        if (vehicleLoads[c] + pts[i].loadMeters <= vehicleCapacities[c]) {
+          if (d < bestDist) {
+            bestDist = d;
+            best = c;
+          }
+        }
+      }
+      
+      if (best !== -1) {
+        tempAssignments[i] = best;
+        vehicleLoads[best] += pts[i].loadMeters;
+      } else {
+        unassigned.push(i);
+      }
+    }
+    
+    // Assign unassigned points aan voertuig met meeste restcapaciteit
+    for (const i of unassigned) {
+      let bestVehicle = 0;
+      let maxRemainingCap = vehicleCapacities[0] - vehicleLoads[0];
+      
+      for (let c = 1; c < vehicleCapacities.length; c++) {
+        const remaining = vehicleCapacities[c] - vehicleLoads[c];
+        if (remaining > maxRemainingCap) {
+          maxRemainingCap = remaining;
+          bestVehicle = c;
+        }
+      }
+      
+      tempAssignments[i] = bestVehicle;
+      vehicleLoads[bestVehicle] += pts[i].loadMeters;
+    }
+    
+    assignments = tempAssignments;
+
+    // Update centroids op basis van toegewezen punten
+    const sums = new Array(centroids.length).fill(0).map(() => ({ x: 0, y: 0, n: 0 }));
+    for (let i = 0; i < pts.length; i++) {
+      const a = assignments[i];
+      if (a >= 0) {
+        sums[a].x += pts[i].x;
+        sums[a].y += pts[i].y;
+        sums[a].n += 1;
       }
     }
 
-    // Als geen voertuig genoeg capaciteit heeft, assign aan voertuig met meeste capaciteit
-    // (dit betekent dat we over capaciteit gaan - gebruiker moet gewaarschuwd worden)
-    if (!assigned) {
-      const maxCapIndex = vehicleCapacities.indexOf(Math.max(...vehicleCapacities));
-      vehicleAssignments[maxCapIndex].push(point);
-      vehicleLoads[maxCapIndex] += loadMeters;
+    let moved = false;
+    for (let c = 0; c < centroids.length; c++) {
+      if (sums[c].n === 0) continue;
+      const nx = sums[c].x / sums[c].n;
+      const ny = sums[c].y / sums[c].n;
+      if (Math.abs(nx - centroids[c].x) > 0.0001 || Math.abs(ny - centroids[c].y) > 0.0001) {
+        moved = true;
+      }
+      centroids[c].x = nx;
+      centroids[c].y = ny;
+    }
+
+    if (!moved) break;
+  }
+
+  // Build vehicle assignments
+  const vehicleAssignments: Point[][] = vehicleCapacities.map(() => []);
+  for (let i = 0; i < pts.length; i++) {
+    const c = assignments[i];
+    if (c >= 0) {
+      const p = points.find((pp) => pp.id === pts[i].id)!;
+      vehicleAssignments[c].push(p);
     }
   }
 
@@ -288,6 +373,8 @@ export async function calculateOptimalRoutesWithCapacity(
     totalDuration,
     meanDuration,
     vehicleLoads,
+    vehicleNames: vehicleNames || [],
+    vehicleCapacities: vehicleCapacities,
   };
 }
 
@@ -347,8 +434,9 @@ function optimizeRouteOrder(points: Point[], startPoint?: Point): Point[] {
   if (points.length === 0) return [];
   if (points.length === 1) return points;
 
+  // Stap 1: Nearest Neighbor voor initiële route
   const unvisited = [...points];
-  const route: Point[] = [];
+  let route: Point[] = [];
   
   let current = startPoint || unvisited.shift()!;
   if (!startPoint) {
@@ -374,5 +462,50 @@ function optimizeRouteOrder(points: Point[], startPoint?: Point): Point[] {
     route.push(current);
   }
 
+  // Stap 2: 2-opt verbetering voor kortere route
+  // Probeer segmenten om te draaien om de totale afstand te verkleinen
+  route = twoOptImprovement(route, startPoint);
+
   return route;
+}
+
+function twoOptImprovement(route: Point[], startPoint?: Point): Point[] {
+  if (route.length < 3) return route;
+  
+  let improved = true;
+  let bestRoute = [...route];
+  let maxIterations = 100; // Voorkom oneindige loops
+  let iteration = 0;
+
+  while (improved && iteration < maxIterations) {
+    improved = false;
+    iteration++;
+
+    // Voor elk paar segmenten in de route
+    for (let i = 0; i < bestRoute.length - 2; i++) {
+      for (let j = i + 2; j < bestRoute.length; j++) {
+        // Bereken huidige afstand
+        const currentDist = 
+          calculateHaversineDistance(bestRoute[i].y, bestRoute[i].x, bestRoute[i + 1].y, bestRoute[i + 1].x) +
+          calculateHaversineDistance(bestRoute[j].y, bestRoute[j].x, bestRoute[(j + 1) % bestRoute.length]?.y || bestRoute[j].y, bestRoute[(j + 1) % bestRoute.length]?.x || bestRoute[j].x);
+
+        // Bereken nieuwe afstand als we het segment omdraaien
+        const newDist = 
+          calculateHaversineDistance(bestRoute[i].y, bestRoute[i].x, bestRoute[j].y, bestRoute[j].x) +
+          calculateHaversineDistance(bestRoute[i + 1].y, bestRoute[i + 1].x, bestRoute[(j + 1) % bestRoute.length]?.y || bestRoute[i + 1].y, bestRoute[(j + 1) % bestRoute.length]?.x || bestRoute[i + 1].x);
+
+        // Als het korter is, draai het segment om
+        if (newDist < currentDist) {
+          const newRoute = [...bestRoute];
+          // Draai segment tussen i+1 en j om
+          const reversed = newRoute.slice(i + 1, j + 1).reverse();
+          newRoute.splice(i + 1, j - i, ...reversed);
+          bestRoute = newRoute;
+          improved = true;
+        }
+      }
+    }
+  }
+
+  return bestRoute;
 }

@@ -17,8 +17,8 @@ import { useToast } from "@/hooks/use-toast";
 const START_END_LOCATION: Point = {
   id: 'start-end',
   name: "Wickenburghseweg 75, 't Goy",
-  x: 5.2198,
-  y: 51.9845
+  x: 5.2122652,
+  y: 52.0038325
 };
 
 export default function Home() {
@@ -33,6 +33,9 @@ export default function Home() {
   const [totalDuration, setTotalDuration] = useState(0);
   const [selectedVehicles, setSelectedVehicles] = useState<Map<string, number>>(new Map());
   const [vehicleLoads, setVehicleLoads] = useState<number[]>([]);
+  const [vehicleNames, setVehicleNames] = useState<string[]>([]);
+  const [vehicleCapacities, setVehicleCapacities] = useState<number[]>([]);
+  const [overloadPercentage, setOverloadPercentage] = useState<number>(0);
   const [calculationTime, setCalculationTime] = useState(0);
   const [isCalculating, setIsCalculating] = useState(false);
   const { toast } = useToast();
@@ -118,20 +121,25 @@ export default function Home() {
       // Bouw lijst van voertuigen met capaciteiten
       const vehicleCapacities: number[] = [];
       const vehicleNames: string[] = [];
+      const vehicleCounters = new Map<string, number>(); // tel per type
       
       selectedVehicles.forEach((count, vehicleId) => {
         const vehicleType = VEHICLE_TYPES.find(v => v.id === vehicleId);
         if (vehicleType) {
           for (let i = 0; i < count; i++) {
-            vehicleCapacities.push(vehicleType.capacity);
-            vehicleNames.push(vehicleType.name);
+            // Pas capaciteit aan met overload percentage
+            const adjustedCapacity = vehicleType.capacity * (1 + overloadPercentage / 100);
+            vehicleCapacities.push(adjustedCapacity);
+            const counter = (vehicleCounters.get(vehicleId) || 0) + 1;
+            vehicleCounters.set(vehicleId, counter);
+            vehicleNames.push(count > 1 ? `${vehicleType.name} ${counter}` : vehicleType.name);
           }
         }
       });
 
       // Als er voertuigen geselecteerd zijn, gebruik capaciteits-bewuste routing
       if (vehicleCapacities.length > 0) {
-        const multi = await calculateOptimalRoutesWithCapacity([...points], vehicleCapacities, START_END_LOCATION);
+        const multi = await calculateOptimalRoutesWithCapacity([...points], vehicleCapacities, vehicleNames, START_END_LOCATION);
         const endTime = performance.now();
 
         setMultiRoutes(multi.routes);
@@ -139,12 +147,23 @@ export default function Home() {
         setVehicleGeometries(multi.routes.map(r => r.geometry));
         setRouteGeometry([]);
         setVehicleLoads(multi.vehicleLoads || []);
+        setVehicleNames(multi.vehicleNames || []);
+        setVehicleCapacities(multi.vehicleCapacities || []);
         setTotalDistance(multi.totalDistance);
         setTotalDuration(multi.totalDuration);
         setCalculationTime(Math.round(endTime - startTime));
 
-        // Check voor overbelading
-        const overloaded = multi.vehicleLoads?.some((load, i) => load > vehicleCapacities[i]);
+        // Check voor overbelading (gebruik originele capaciteiten voor warning)
+        const originalCapacities: number[] = [];
+        selectedVehicles.forEach((count, vehicleId) => {
+          const vehicleType = VEHICLE_TYPES.find(v => v.id === vehicleId);
+          if (vehicleType) {
+            for (let i = 0; i < count; i++) {
+              originalCapacities.push(vehicleType.capacity);
+            }
+          }
+        });
+        const overloaded = multi.vehicleLoads?.some((load, i) => load > originalCapacities[i]);
         
         toast({
           title: `Rondrit berekend voor ${vehicleCapacities.length} voertuigen`,
@@ -232,6 +251,32 @@ export default function Home() {
               onVehicleChange={handleVehicleChange}
             />
 
+            <Card className="p-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">
+                  Toegestane overbelading (%)
+                </label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="1"
+                    value={overloadPercentage}
+                    onChange={(e) => setOverloadPercentage(Math.max(0, Math.min(100, Number(e.target.value))))}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    placeholder="0"
+                  />
+                  <span className="text-sm text-muted-foreground whitespace-nowrap">
+                    % extra capaciteit
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Met {overloadPercentage}% overbelading kan elk voertuig {overloadPercentage > 0 ? `${overloadPercentage}% meer` : 'de normale'} capaciteit laden.
+                </p>
+              </div>
+            </Card>
+
             <LocationSearch onSelectLocation={addPointFromLocation} />
 
             <div className="space-y-3">
@@ -308,39 +353,33 @@ export default function Home() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-2">
                     {multiRoutes.map((r, i) => {
                       const loadMeters = vehicleLoads[i] || 0;
-                      // Bereken capaciteit van dit voertuig
-                      let vehicleCapacity = 0;
-                      let vehicleIndex = 0;
-                      selectedVehicles.forEach((count, vehicleId) => {
-                        const vehicleType = VEHICLE_TYPES.find(v => v.id === vehicleId);
-                        if (vehicleType) {
-                          for (let j = 0; j < count; j++) {
-                            if (vehicleIndex === i) {
-                              vehicleCapacity = vehicleType.capacity;
-                              break;
-                            }
-                            vehicleIndex++;
-                          }
-                        }
-                      });
+                      // Haal capaciteit en naam uit de state
+                      const vehicleCapacity = vehicleCapacities[i] || 0;
+                      const vehicleName = vehicleNames[i] || `Voertuig ${i + 1}`;
+                      
+                      // Bereken originele capaciteit (zonder overload percentage)
+                      const originalCapacity = vehicleCapacity / (1 + overloadPercentage / 100);
+                      const isOverOriginal = loadMeters > originalCapacity;
                       const isOverloaded = loadMeters > vehicleCapacity;
                       
                       return (
                         <div
                           key={`legend-${i}`}
-                          className={`flex items-center gap-3 p-2 border rounded cursor-pointer ${selectedVehicle === i ? 'bg-muted/20 border-primary' : ''} ${isOverloaded ? 'border-destructive' : ''}`}
+                          className={`flex items-center gap-3 p-2 border rounded cursor-pointer ${selectedVehicle === i ? 'bg-muted/20 border-primary' : ''} ${isOverloaded ? 'border-destructive' : isOverOriginal ? 'border-orange-500' : ''}`}
                           onMouseEnter={() => setSelectedVehicle(i)}
                           onMouseLeave={() => setSelectedVehicle(null)}
                           onClick={() => setSelectedVehicle(selectedVehicle === i ? null : i)}
                         >
                           <div style={{ width: 16, height: 16, background: VEHICLE_COLORS[i % VEHICLE_COLORS.length], borderRadius: 4 }} />
                           <div>
-                            <div className="text-sm font-medium">Voertuig {i + 1}</div>
+                            <div className="text-sm font-medium">{vehicleName}</div>
                             <div className="text-xs text-muted-foreground">
                               {r.totalDistance?.toFixed?.(1) ?? 0} km • {Math.round((r.totalDuration ?? 0)/60)} min
                             </div>
-                            <div className={`text-xs ${isOverloaded ? 'text-destructive font-medium' : 'text-muted-foreground'}`}>
-                              {loadMeters.toFixed(1)} / {vehicleCapacity.toFixed(1)} laadmeters {isOverloaded && '⚠️'}
+                            <div className={`text-xs ${isOverloaded ? 'text-destructive font-medium' : isOverOriginal ? 'text-orange-600 font-medium' : 'text-muted-foreground'}`}>
+                              {loadMeters.toFixed(1)} / {vehicleCapacity.toFixed(1)} laadmeters 
+                              {isOverloaded && ' ⚠️ TE ZWAAR'}
+                              {!isOverloaded && isOverOriginal && ` 📦 (+${overloadPercentage}%)`}
                             </div>
                           </div>
                         </div>
@@ -357,19 +396,22 @@ export default function Home() {
                     </button>
                   </div>
                 </div>
-                {multiRoutes.map((r, i) => (
-                  <div key={i}>
-                    <Card className="p-4">
-                      <h4 className="font-medium mb-2">Voertuig {i + 1}</h4>
-                      <RouteResult
-                        optimizedRoute={r.route}
-                        totalDistance={r.totalDistance}
-                        totalDuration={r.totalDuration}
-                        calculationTime={calculationTime}
-                      />
-                    </Card>
-                  </div>
-                ))}
+                {multiRoutes.map((r, i) => {
+                  const vehicleName = vehicleNames[i] || `Voertuig ${i + 1}`;
+                  return (
+                    <div key={i}>
+                      <Card className="p-4">
+                        <h4 className="font-medium mb-2">{vehicleName}</h4>
+                        <RouteResult
+                          optimizedRoute={r.route}
+                          totalDistance={r.totalDistance}
+                          totalDuration={r.totalDuration}
+                          calculationTime={calculationTime}
+                        />
+                      </Card>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
