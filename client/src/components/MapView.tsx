@@ -15,13 +15,23 @@ const defaultIcon = L.icon({
   shadowSize: [41, 41]
 });
 
-const greenIcon = L.icon({
-  iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+// Use an inline SVG DivIcon that matches the default marker silhouette but colored red.
+const redDivIcon = L.divIcon({
+  className: "", // keep no extra classes to avoid css interference
+  html: `
+    <svg width="25" height="41" viewBox="0 0 25 41" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <filter id="s" x="-50%" y="-50%" width="200%" height="200%">
+          <feDropShadow dx="0" dy="1" stdDeviation="1" flood-color="#000" flood-opacity="0.25"/>
+        </filter>
+      </defs>
+      <path d="M12.5 0 C7 0 2 5 2 10 C2 18 12.5 41 12.5 41 C12.5 41 23 18 23 10 C23 5 18 0 12.5 0 Z" fill="#ef4444" filter="url(#s)"/>
+      <circle cx="12.5" cy="12" r="5.2" fill="#ffffff" />
+    </svg>
+  `,
   iconSize: [25, 41],
   iconAnchor: [12, 41],
   popupAnchor: [1, -34],
-  shadowSize: [41, 41]
 });
 
 L.Marker.prototype.options.icon = defaultIcon;
@@ -71,7 +81,7 @@ export function MapView({ points, route, routeGeometry, vehicleGeometries, selec
             <Marker 
               key={point.id} 
               position={[point.y, point.x]}
-              icon={isStartEnd ? greenIcon : defaultIcon}
+              icon={isStartEnd ? redDivIcon : defaultIcon}
             >
               <Popup>
                 <div>

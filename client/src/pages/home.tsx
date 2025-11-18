@@ -9,7 +9,7 @@ import { LocationSearch } from "@/components/LocationSearch";
 import { XmlImporter } from "@/components/XmlImporter";
 import { VehicleSelector } from "@/components/VehicleSelector";
 import { Card } from "@/components/ui/card";
-import { calculateOptimalRoute, calculateOptimalRoutesWithCapacity } from "@/lib/routing";
+import { calculateOptimalRoute, calculateOptimalRoutesWithCapacity, RouteSegment } from "@/lib/routing";
 import { VEHICLE_COLORS } from "@/lib/colors";
 import { VEHICLE_TYPES } from "@/lib/vehicles";
 import { useToast } from "@/hooks/use-toast";
@@ -31,6 +31,7 @@ export default function Home() {
   const [selectedVehicle, setSelectedVehicle] = useState<number | null>(null);
   const [totalDistance, setTotalDistance] = useState(0);
   const [totalDuration, setTotalDuration] = useState(0);
+  const [optimizedSegments, setOptimizedSegments] = useState<RouteSegment[] | null>(null);
   const [selectedVehicles, setSelectedVehicles] = useState<Map<string, number>>(new Map());
   const [vehicleLoads, setVehicleLoads] = useState<number[]>([]);
   const [vehicleNames, setVehicleNames] = useState<string[]>([]);
@@ -178,6 +179,7 @@ export default function Home() {
         const endTime = performance.now();
 
         setOptimizedRoute(result.route);
+        setOptimizedSegments(result.segments);
         setMultiRoutes(null);
         setRouteGeometry(result.geometry);
         setVehicleGeometries(null);
@@ -342,6 +344,7 @@ export default function Home() {
                   optimizedRoute={optimizedRoute}
                   totalDistance={totalDistance}
                   totalDuration={totalDuration}
+                  segments={optimizedSegments ?? undefined}
                   calculationTime={calculationTime}
                 />
               </div>
@@ -406,6 +409,7 @@ export default function Home() {
                           optimizedRoute={r.route}
                           totalDistance={r.totalDistance}
                           totalDuration={r.totalDuration}
+                          segments={r.segments}
                           calculationTime={calculationTime}
                         />
                       </Card>
