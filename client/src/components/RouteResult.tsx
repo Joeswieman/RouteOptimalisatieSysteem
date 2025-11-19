@@ -23,32 +23,54 @@ export function RouteResult({ optimizedRoute, totalDistance, totalDuration, segm
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   });
 
-  const { arrivalString, departureString, perStopArrivals } = useMemo(() => {
+  const { arrivalString, departureString, departureTime, departureDate, arrivalTime, arrivalDate, perStopArrivals } = useMemo(() => {
     let depStr = "";
     let arrStr = "";
+    let depTime = "";
+    let depDate = "";
+    let arrTime = "";
+    let arrDate = "";
     const arrivals: (string | null)[] = [];
     try {
       // HTML datetime-local produces a string like 'YYYY-MM-DDTHH:mm' which is parsed as local time
-      const depDate = new Date(departure);
-      if (!isNaN(depDate.getTime())) {
-        depStr = depDate.toLocaleString("nl-NL", {
+      const depDateObj = new Date(departure);
+      if (!isNaN(depDateObj.getTime())) {
+        depStr = depDateObj.toLocaleString("nl-NL", {
           day: "2-digit",
           month: "short",
           year: "numeric",
           hour: "2-digit",
           minute: "2-digit",
         });
+        depTime = depDateObj.toLocaleString("nl-NL", {
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+        depDate = depDateObj.toLocaleString("nl-NL", {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+        });
 
         if (totalDuration && totalDuration > 0) {
           // Add 10 minutes service time per stop (exclude start point, so length - 1)
           const serviceTime = (optimizedRoute.length - 1) * 600; // 10 min = 600 sec
-          const arrDate = new Date(depDate.getTime() + (totalDuration + serviceTime) * 1000);
-          arrStr = arrDate.toLocaleString("nl-NL", {
+          const arrDateObj = new Date(depDateObj.getTime() + (totalDuration + serviceTime) * 1000);
+          arrStr = arrDateObj.toLocaleString("nl-NL", {
             day: "2-digit",
             month: "short",
             year: "numeric",
             hour: "2-digit",
             minute: "2-digit",
+          });
+          arrTime = arrDateObj.toLocaleString("nl-NL", {
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+          arrDate = arrDateObj.toLocaleString("nl-NL", {
+            day: "2-digit",
+            month: "short",
+            year: "numeric",
           });
         }
 
@@ -57,7 +79,7 @@ export function RouteResult({ optimizedRoute, totalDistance, totalDuration, segm
           // arrival at point 0 is departure
           for (let i = 0; i < optimizedRoute.length; i++) {
             if (i === 0) {
-              arrivals.push(depDate.toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" }));
+              arrivals.push(depDateObj.toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" }));
             } else {
               // sum durations of segments 0..i-1 + 10 minutes per previous stop
               let seconds = 0;
@@ -66,8 +88,8 @@ export function RouteResult({ optimizedRoute, totalDistance, totalDuration, segm
               }
               // Add 10 minutes (600 seconds) service time for each previous stop
               seconds += (i * 600);
-              const arrDate = new Date(depDate.getTime() + seconds * 1000);
-              arrivals.push(arrDate.toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" }));
+              const arrDateObj = new Date(depDateObj.getTime() + seconds * 1000);
+              arrivals.push(arrDateObj.toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" }));
             }
           }
         } else {
@@ -78,7 +100,7 @@ export function RouteResult({ optimizedRoute, totalDistance, totalDuration, segm
     } catch (e) {
       // ignore parse errors, leave strings empty
     }
-    return { arrivalString: arrStr, departureString: depStr, perStopArrivals: arrivals };
+    return { arrivalString: arrStr, departureString: depStr, departureTime: depTime, departureDate: depDate, arrivalTime: arrTime, arrivalDate: arrDate, perStopArrivals: arrivals };
   }, [departure, totalDuration, segments, optimizedRoute]);
   
   return (
@@ -122,17 +144,27 @@ export function RouteResult({ optimizedRoute, totalDistance, totalDuration, segm
                 className="h-10 px-3 rounded-md border border-muted-foreground/20 bg-background text-sm font-mono w-full max-w-[220px]"
               />
             </div>
-            {departureString && (
-              <p className="text-xs text-muted-foreground mt-1">{departureString}</p>
+            {departureTime && (
+              <>
+                <p className="text-lg font-semibold text-foreground mt-1">{departureTime}</p>
+                <p className="text-xs text-muted-foreground">{departureDate}</p>
+              </>
             )}
           </div>
           {/* Aankomsttijd weergave */}
           <div>
             <p className="text-sm text-muted-foreground mb-1">Terug op Depot</p>
-            <p className="text-lg font-semibold text-foreground" data-testid="text-arrival-time">
-              {arrivalString || "-"}
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">(incl. servicetijd)</p>
+            {arrivalTime ? (
+              <>
+                <p className="text-lg font-semibold text-foreground" data-testid="text-arrival-time">
+                  {arrivalTime}
+                </p>
+                <p className="text-xs text-muted-foreground">{arrivalDate}</p>
+                <p className="text-xs text-muted-foreground">(incl. servicetijd)</p>
+              </>
+            ) : (
+              <p className="text-lg font-semibold text-foreground" data-testid="text-arrival-time">-</p>
+            )}
           </div>
         </div>
       </Card>

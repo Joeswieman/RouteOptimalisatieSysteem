@@ -33,7 +33,7 @@ export function PointInput({ point, index, onUpdate, onRemove, onHighlight, isHi
         >
           {index + 1}
         </div>
-        <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-2">
+        <div className="flex-1 grid grid-cols-1 sm:grid-cols-4 gap-2">
           <Input
             placeholder="Stad/Gemeente"
             value={point.city ?? ''}
@@ -45,6 +45,16 @@ export function PointInput({ point, index, onUpdate, onRemove, onHighlight, isHi
             value={point.name}
             onChange={(e) => onUpdate({ ...point, name: e.target.value })}
             data-testid={`input-point-name-${index}`}
+          />
+          <Input
+            type="text"
+            placeholder="Laadmeters"
+            value={point.loadMeters ?? ''}
+            onChange={(e) => {
+              const val = e.target.value.replace(/,/g, '.').replace(/[^0-9.]/g, '');
+              onUpdate({ ...point, loadMeters: val ? parseFloat(val) : undefined });
+            }}
+            data-testid={`input-point-loadmeters-${index}`}
           />
           <Input
             type="text"
