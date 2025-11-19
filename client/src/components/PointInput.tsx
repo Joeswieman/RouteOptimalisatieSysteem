@@ -9,6 +9,8 @@ export interface Point {
   x: number;
   y: number;
   loadMeters?: number; // laadmeters voor deze stop
+  timeWindow?: string; // tijdvenster bijv. "7:00-11:30"
+  city?: string; // stad/gemeente
 }
 
 interface PointInputProps {
@@ -26,48 +28,25 @@ export function PointInput({ point, index, onUpdate, onRemove }: PointInputProps
         <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary text-primary-foreground text-sm font-medium">
           {index + 1}
         </div>
-        <div className="flex-1 grid grid-cols-1 sm:grid-cols-4 gap-2">
+        <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-2">
           <Input
-            placeholder="Naam locatie"
+            placeholder="Stad/Gemeente"
+            value={point.city ?? ''}
+            onChange={(e) => onUpdate({ ...point, city: e.target.value })}
+            data-testid={`input-point-city-${index}`}
+          />
+          <Input
+            placeholder="Straat + Nummer"
             value={point.name}
             onChange={(e) => onUpdate({ ...point, name: e.target.value })}
             data-testid={`input-point-name-${index}`}
           />
           <Input
             type="text"
-            placeholder="Breedtegraad"
-            value={String(point.y ?? '')}
-            onChange={(e) => {
-              const raw = e.target.value.replace(/,/g, '.').replace(/[^0-9.\-]/g, '');
-              const num = raw === '' ? NaN : Number(raw);
-              onUpdate({ ...point, y: num });
-            }}
-            data-testid={`input-point-y-${index}`}
-            inputMode="decimal"
-          />
-          <Input
-            type="text"
-            placeholder="Lengtegraad"
-            value={String(point.x ?? '')}
-            onChange={(e) => {
-              const raw = e.target.value.replace(/,/g, '.').replace(/[^0-9.\-]/g, '');
-              const num = raw === '' ? NaN : Number(raw);
-              onUpdate({ ...point, x: num });
-            }}
-            data-testid={`input-point-x-${index}`}
-            inputMode="decimal"
-          />
-          <Input
-            type="text"
-            placeholder="Laadmeters"
-            value={String(point.loadMeters ?? '')}
-            onChange={(e) => {
-              const raw = e.target.value.replace(/,/g, '.').replace(/[^0-9.]/g, '');
-              const num = raw === '' ? undefined : Number(raw);
-              onUpdate({ ...point, loadMeters: num });
-            }}
-            data-testid={`input-point-loadmeters-${index}`}
-            inputMode="decimal"
+            placeholder="Tijdvenster (7:00-11:30)"
+            value={point.timeWindow ?? ''}
+            onChange={(e) => onUpdate({ ...point, timeWindow: e.target.value })}
+            data-testid={`input-point-timewindow-${index}`}
           />
         </div>
       </div>

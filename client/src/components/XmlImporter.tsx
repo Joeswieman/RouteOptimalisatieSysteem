@@ -23,6 +23,27 @@ export function XmlImporter({ onImportPoints }: XmlImporterProps) {
       throw new Error("Ongeldig XML-bestand");
     }
 
+    // Tijdvensters per gemeente
+    const cityTimeWindows: { [key: string]: string } = {
+      'Amsterdam': '7:00-11:30',
+      'Rotterdam': '6:00-11:00',
+      'Den Haag': '6:00-11:30',
+      'Utrecht': '6:00-10:00',
+      'Eindhoven': '6:00-11:30',
+      'Tilburg': '7:00-11:30',
+      'Gouda': '6:00-11:00',
+      'Haarlem': '7:00-11:30',
+      'Delft': '6:00-11:00',
+      'Leiden': '6:00-11:30',
+      'Arnhem': '7:00-11:00',
+      'Groningen': '7:00-12:00',
+      'Maastricht': '7:00-11:30',
+      'Zwolle': '6:00-11:00',
+      'Amersfoort': '7:00-11:00',
+      'Deventer': '6:00-11:00',
+      'Enschede': '7:00-11:00',
+    };
+
     const orders = xmlDoc.querySelectorAll("Order");
     const points: Point[] = [];
 
@@ -57,9 +78,12 @@ export function XmlImporter({ onImportPoints }: XmlImporterProps) {
         const city = secondAddress.querySelector("City")?.textContent || "";
         const zipCode = secondAddress.querySelector("Zip")?.textContent || "";
         
-        // Combineer voor naam
-        const name = `${street} ${houseNumber}, ${city}`.trim();
+        // Combineer voor naam (alleen straat + nummer)
+        const name = `${street} ${houseNumber}`.trim();
         const fullAddress = `${street} ${houseNumber}, ${zipCode} ${city}, Nederland`.trim();
+        
+        // Bepaal tijdvenster op basis van stad
+        const timeWindow = cityTimeWindows[city] || undefined;
 
         // Geocodeer het adres om coördinaten te krijgen
         try {
@@ -68,9 +92,11 @@ export function XmlImporter({ onImportPoints }: XmlImporterProps) {
             points.push({
               id: Math.random().toString(36).substr(2, 9),
               name: name,
+              city: city,
               x: coords.lon,
               y: coords.lat,
               loadMeters: loadMeters,
+              timeWindow: timeWindow,
             });
           }
         } catch (error) {
@@ -79,9 +105,11 @@ export function XmlImporter({ onImportPoints }: XmlImporterProps) {
           points.push({
             id: Math.random().toString(36).substr(2, 9),
             name: name,
+            city: city,
             x: 0,
             y: 0,
             loadMeters: loadMeters,
+            timeWindow: timeWindow,
           });
         }
       }
