@@ -34,6 +34,25 @@ const redDivIcon = L.divIcon({
   popupAnchor: [1, -34],
 });
 
+// Yellow/gold icon for highlighted markers
+const goldDivIcon = L.divIcon({
+  className: "",
+  html: `
+    <svg width="25" height="41" viewBox="0 0 25 41" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <filter id="sg" x="-50%" y="-50%" width="200%" height="200%">
+          <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#000" flood-opacity="0.4"/>
+        </filter>
+      </defs>
+      <path d="M12.5 0 C7 0 2 5 2 10 C2 18 12.5 41 12.5 41 C12.5 41 23 18 23 10 C23 5 18 0 12.5 0 Z" fill="#eab308" filter="url(#sg)"/>
+      <circle cx="12.5" cy="12" r="5.2" fill="#ffffff" />
+    </svg>
+  `,
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+});
+
 L.Marker.prototype.options.icon = defaultIcon;
 
 interface MapViewProps {
@@ -45,6 +64,7 @@ interface MapViewProps {
   onHoverVehicle?: (index: number | null) => void;
   showLegendOverlay?: boolean;
   onMapClick?: (lat: number, lng: number) => void;
+  highlightedPointId?: string | null;
 }
 
 function MapClickHandler({ onMapClick }: { onMapClick?: (lat: number, lng: number) => void }) {
@@ -58,7 +78,7 @@ function MapClickHandler({ onMapClick }: { onMapClick?: (lat: number, lng: numbe
   return null;
 }
 
-export function MapView({ points, route, routeGeometry, vehicleGeometries, selectedVehicle, onHoverVehicle, showLegendOverlay, onMapClick }: MapViewProps) {
+export function MapView({ points, route, routeGeometry, vehicleGeometries, selectedVehicle, onHoverVehicle, showLegendOverlay, onMapClick, highlightedPointId }: MapViewProps) {
   const center: [number, number] = [52.1326, 5.2913];
 
   return (
@@ -77,11 +97,14 @@ export function MapView({ points, route, routeGeometry, vehicleGeometries, selec
         
         {points.map((point, index) => {
           const isStartEnd = point.id === 'start-end';
+          const isHighlighted = point.id === highlightedPointId;
+          const markerIcon = isStartEnd ? redDivIcon : (isHighlighted ? goldDivIcon : defaultIcon);
+          
           return (
             <Marker 
               key={point.id} 
               position={[point.y, point.x]}
-              icon={isStartEnd ? redDivIcon : defaultIcon}
+              icon={markerIcon}
             >
               <Popup>
                 <div>

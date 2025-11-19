@@ -39,6 +39,7 @@ export default function Home() {
   const [overloadPercentage, setOverloadPercentage] = useState<number>(0);
   const [calculationTime, setCalculationTime] = useState(0);
   const [isCalculating, setIsCalculating] = useState(false);
+  const [highlightedPointId, setHighlightedPointId] = useState<string | null>(null);
   const { toast } = useToast();
 
   const addPoint = () => {
@@ -307,6 +308,8 @@ export default function Home() {
                       index={index}
                       onUpdate={(p) => updatePoint(index, p)}
                       onRemove={() => removePoint(index)}
+                      onHighlight={() => setHighlightedPointId(highlightedPointId === point.id ? null : point.id)}
+                      isHighlighted={highlightedPointId === point.id}
                     />
                   ))}
                 </>
@@ -430,6 +433,7 @@ export default function Home() {
               onHoverVehicle={setSelectedVehicle}
               showLegendOverlay={showLegendOverlay}
               onMapClick={addPointFromMap}
+              highlightedPointId={highlightedPointId}
             />
           </div>
         </div>
