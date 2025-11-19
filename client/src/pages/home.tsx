@@ -95,7 +95,133 @@ export default function Home() {
     setOptimizedRoute(null);
   };
 
-  const handleImportPoints = (importedPoints: Point[]) => {
+  const addUnplannedStops = async () => {
+    if (!multiRoutes || multiRoutes.length === 0) {
+      toast({
+        title: "Geen route gevonden",
+        description: "Bereken eerst een route voordat je kunt bijplannen.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Vind alle punten die nog niet in een route zitten
+    const plannedPointIds = new Set<string>();
+    multiRoutes.forEach(route => {
+      route.route.forEach((point: Point) => {
+        if (point.id !== 'start-end') {
+          plannedPointIds.add(point.id);
+        }
+      });
+    });
+
+    const unplannedPoints = points.filter(p => !plannedPointIds.has(p.id));
+
+    if (unplannedPoints.length === 0) {
+      toast({
+        title: "Geen nieuwe stops",
+        description: "Alle stops zijn al ingepland.",
+      });
+      return;
+    }
+
+    setIsCalculating(true);
+    const updatedRoutes = JSON.parse(JSON.stringify(multiRoutes));
+    const newLoads = [...vehicleLoads];
+    const newGeometries = vehicleGeometries ? JSON.parse(JSON.stringify(vehicleGeometries)) : [];
+    let addedCount = 0;
+
+    // Helper functie om Haversine afstand te berekenen (sneller dan routing API)
+    const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+      const R = 6371; // km
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    };
+
+    // Voeg elk ongepland punt toe aan de meest efficiënte positie (gebruik hemelsbreed afstand)
+    for (const newPoint of unplannedPoints) {
+      let bestVehicleIndex = 0;
+      let bestInsertIndex = 0;
+      let smallestDistanceIncrease = Infinity;
+
+      // Bereken voor elk voertuig en elke mogelijke positie hoeveel extra km (hemelsbreed)
+      for (let i = 0; i < updatedRoutes.length; i++) {
+        const route = updatedRoutes[i].route;
+        
+        for (let j = 1; j < route.length; j++) {
+          const from = route[j - 1];
+          const next = route[j];
+
+          // Huidige afstand (hemelsbreed)
+          const currentDistance = calculateDistance(from.y, from.x, next.y, next.x);
+          
+          // Nieuwe afstand via newPoint (hemelsbreed)
+          const dist1 = calculateDistance(from.y, from.x, newPoint.y, newPoint.x);
+          const dist2 = calculateDistance(newPoint.y, newPoint.x, next.y, next.x);
+          const newDistance = dist1 + dist2;
+
+          const increase = newDistance - currentDistance;
+
+          if (increase < smallestDistanceIncrease) {
+            smallestDistanceIncrease = increase;
+            bestVehicleIndex = i;
+            bestInsertIndex = j;
+          }
+        }
+      }
+
+      // Voeg punt toe op de beste positie
+      const targetRoute = updatedRoutes[bestVehicleIndex];
+      targetRoute.route.splice(bestInsertIndex, 0, newPoint);
+      newLoads[bestVehicleIndex] += newPoint.loadMeters || 0;
+
+      // Update geometrie met daadwerkelijke routing
+      try {
+        const from = targetRoute.route[bestInsertIndex - 1];
+        const to = newPoint;
+        const next = targetRoute.route[bestInsertIndex + 1];
+
+        const route1 = await fetch(`https://router.project-osrm.org/route/v1/driving/${from.x},${from.y};${to.x},${to.y}?overview=full&geometries=geojson`);
+        const data1 = await route1.json();
+        
+        const route2 = await fetch(`https://router.project-osrm.org/route/v1/driving/${to.x},${to.y};${next.x},${next.y}?overview=full&geometries=geojson`);
+        const data2 = await route2.json();
+
+        if (data1.routes?.[0] && data2.routes?.[0]) {
+          const coords1 = data1.routes[0].geometry.coordinates.map((c: number[]) => [c[1], c[0]] as [number, number]);
+          const coords2 = data2.routes[0].geometry.coordinates.map((c: number[]) => [c[1], c[0]] as [number, number]);
+          
+          if (newGeometries[bestVehicleIndex]) {
+            newGeometries[bestVehicleIndex].splice(bestInsertIndex - 1, 1, coords1, coords2);
+          }
+
+          const addedDistance = (data1.routes[0].distance + data2.routes[0].distance) / 1000;
+          const addedDuration = data1.routes[0].duration + data2.routes[0].duration;
+          targetRoute.totalDistance = (targetRoute.totalDistance || 0) + addedDistance;
+          targetRoute.totalDuration = (targetRoute.totalDuration || 0) + addedDuration;
+        }
+      } catch (error) {
+        console.error('Failed to calculate route geometry:', error);
+      }
+
+      addedCount++;
+    }
+
+    setMultiRoutes(updatedRoutes);
+    setVehicleLoads(newLoads);
+    setVehicleGeometries(newGeometries);
+    setIsCalculating(false);
+    
+    toast({
+      title: "Bijplannen voltooid",
+      description: `${addedCount} stop${addedCount !== 1 ? 's' : ''} toegevoegd aan bestaande routes`,
+    });
+  };  const handleImportPoints = (importedPoints: Point[]) => {
     setPoints([...points, ...importedPoints]);
   };
 
@@ -330,6 +456,16 @@ export default function Home() {
                   <RouteIcon className="h-4 w-4 mr-2" />
                   {isCalculating ? "Berekenen..." : "Bereken Rondrit"}
                 </Button>
+                {(optimizedRoute || multiRoutes) && (
+                  <Button
+                    onClick={addUnplannedStops}
+                    disabled={isCalculating}
+                    variant="outline"
+                    data-testid="button-add-unplanned"
+                  >
+                    📋 Bijplannen
+                  </Button>
+                )}
                 <Button
                   onClick={clearAll}
                   variant="ghost"
