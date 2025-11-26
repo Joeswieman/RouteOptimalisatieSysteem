@@ -7,9 +7,10 @@ import { useToast } from "@/hooks/use-toast";
 
 interface XmlImporterProps {
   onImportPoints: (points: Point[]) => void;
+  onXmlLoaded?: (xmlText: string) => void;
 }
 
-export function XmlImporter({ onImportPoints }: XmlImporterProps) {
+export function XmlImporter({ onImportPoints, onXmlLoaded }: XmlImporterProps) {
   const [isProcessing, setIsProcessing] = useState(false);
   const { toast } = useToast();
 
@@ -122,6 +123,11 @@ export function XmlImporter({ onImportPoints }: XmlImporterProps) {
       fullAddress: string;
       loadMeters?: number;
       timeWindow?: string;
+      companyName?: string;
+      pickupCompanyName?: string;
+      weight?: number;
+      referenceNumber?: string;
+      volume?: number;
     }> = [];
     
     let skippedNoAddressList = 0;
@@ -133,6 +139,36 @@ export function XmlImporter({ onImportPoints }: XmlImporterProps) {
       const addressList = order.querySelector("AddressList");
       let addresses = addressList ? addressList.querySelectorAll("Address") : order.querySelectorAll("Address");
 
+      // Haal metadata op uit de order
+      const referenceNumber = order.querySelector('ConNOC')?.textContent?.trim() || undefined;
+      
+      // KgFreight heeft voorrang, daarna Kg, anders undefined
+      let weight: number | undefined;
+      const kgFreightText = order.querySelector('KgFreight')?.textContent?.trim();
+      const kgText = order.querySelector('Kg')?.textContent?.trim();
+      
+      if (kgFreightText) {
+        const val = parseFloat(kgFreightText.replace(',', '.'));
+        if (!isNaN(val)) weight = val;
+      } else if (kgText) {
+        const val = parseFloat(kgText.replace(',', '.'));
+        if (!isNaN(val)) weight = val;
+      }
+      
+      // Haal m3 op uit de order (probeer verschillende veldnamen)
+      let volume: number | undefined;
+      const volumeFields = ['m3', 'M3', 'Volume', 'Cubic', 'CubicMeters'];
+      for (const fieldName of volumeFields) {
+        const field = order.querySelector(fieldName);
+        if (field && field.textContent) {
+          const val = parseFloat(field.textContent.replace(',', '.'));
+          if (!isNaN(val)) {
+            volume = val;
+            break;
+          }
+        }
+      }
+      
       // Haal laadmeters op uit de order
       let loadMeters: number | undefined;
       const loadMeterFields = ['LoadMeters', 'Laadmeters', 'Volume', 'LoadingMeters', 'LM'];
@@ -150,8 +186,11 @@ export function XmlImporter({ onImportPoints }: XmlImporterProps) {
 
       // Kies bij voorkeur het tweede adres, maar val terug op het eerste als er maar één is
       let chosenAddress: Element | null = null;
+      let pickupAddress: Element | null = null;
+      
       if (addresses && addresses.length >= 2) {
-        chosenAddress = addresses[1];
+        pickupAddress = addresses[0]; // SHP - ophaaladres
+        chosenAddress = addresses[1]; // CON - afleveradres
       } else if (addresses && addresses.length === 1) {
         chosenAddress = addresses[0];
       }
@@ -171,6 +210,11 @@ export function XmlImporter({ onImportPoints }: XmlImporterProps) {
           fullAddress: "",
           loadMeters,
           timeWindow: undefined,
+          companyName: undefined,
+          pickupCompanyName: undefined,
+          weight,
+          referenceNumber,
+          volume,
         });
         continue;
       }
@@ -180,6 +224,8 @@ export function XmlImporter({ onImportPoints }: XmlImporterProps) {
       const houseNumber = chosenAddress.querySelector("HouseNumber")?.textContent?.trim() || "";
       const city = chosenAddress.querySelector("City")?.textContent?.trim() || "";
       const zipCode = chosenAddress.querySelector("Zip")?.textContent?.trim() || "";
+      const companyName = chosenAddress.querySelector("Name1")?.textContent?.trim() || undefined;
+      const pickupCompanyName = pickupAddress?.querySelector("Name1")?.textContent?.trim() || undefined;
 
       // Als straat of stad ontbreekt, bouw fullAddress uit de volledige tekst van het address-element
       let name = `${street} ${houseNumber}`.trim();
@@ -198,6 +244,11 @@ export function XmlImporter({ onImportPoints }: XmlImporterProps) {
         fullAddress: fullAddress || "",
         loadMeters,
         timeWindow,
+        companyName,
+        pickupCompanyName,
+        weight,
+        referenceNumber,
+        volume,
       });
     }
 
@@ -224,6 +275,11 @@ export function XmlImporter({ onImportPoints }: XmlImporterProps) {
         y: coords ? coords.lat : 0,
         loadMeters: data.loadMeters,
         timeWindow: data.timeWindow,
+        companyName: data.companyName,
+        pickupCompanyName: data.pickupCompanyName,
+        weight: data.weight,
+        referenceNumber: data.referenceNumber,
+        volume: data.volume,
       });
     }
 
@@ -251,6 +307,9 @@ export function XmlImporter({ onImportPoints }: XmlImporterProps) {
       }
 
       onImportPoints(points);
+      if (onXmlLoaded) {
+        onXmlLoaded(text);
+      }
       
       toast({
         title: "Import geslaagd!",

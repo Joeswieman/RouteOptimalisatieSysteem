@@ -8,6 +8,7 @@ import { MapView } from "@/components/MapView";
 import { LocationSearch } from "@/components/LocationSearch";
 import { XmlImporter } from "@/components/XmlImporter";
 import { VehicleSelector } from "@/components/VehicleSelector";
+import { DocumentGenerator } from "@/components/DocumentGenerator";
 import { Card } from "@/components/ui/card";
 import { calculateOptimalRoute, calculateOptimalRoutesWithCapacity, RouteSegment } from "@/lib/routing";
 import { VEHICLE_COLORS } from "@/lib/colors";
@@ -41,6 +42,7 @@ export default function Home() {
   const [isCalculating, setIsCalculating] = useState(false);
   const [highlightedPointId, setHighlightedPointId] = useState<string | null>(null);
   const [highlightedVehicle, setHighlightedVehicle] = useState<number | null>(null);
+  const [xmlData, setXmlData] = useState<string | null>(null);
   const { toast } = useToast();
 
   const addPoint = () => {
@@ -427,7 +429,7 @@ export default function Home() {
               </Card>
             </div>
 
-            <XmlImporter onImportPoints={handleImportPoints} />
+            <XmlImporter onImportPoints={handleImportPoints} onXmlLoaded={setXmlData} />
 
             <VehicleSelector 
               selectedVehicles={selectedVehicles}
@@ -610,6 +612,17 @@ export default function Home() {
                   );
                 })}
               </div>
+            )}
+
+            {/* Document Generator - helemaal onderaan */}
+            {multiRoutes && multiRoutes.length > 0 && (
+              <DocumentGenerator
+                multiRoutes={multiRoutes}
+                vehicleNames={vehicleNames}
+                vehicleLoads={vehicleLoads}
+                vehicleCapacities={vehicleCapacities}
+                xmlData={xmlData}
+              />
             )}
           </div>
 

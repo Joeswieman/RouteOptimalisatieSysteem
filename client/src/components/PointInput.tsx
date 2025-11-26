@@ -11,6 +11,11 @@ export interface Point {
   loadMeters?: number; // laadmeters voor deze stop
   timeWindow?: string; // tijdvenster bijv. "7:00-11:30"
   city?: string; // stad/gemeente
+  companyName?: string; // bedrijfsnaam afleveradres (CON - Name1)
+  pickupCompanyName?: string; // bedrijfsnaam ophaaladres (SHP - Name1)
+  referenceNumber?: string; // referentienummer (ConNOC)
+  weight?: number; // gewicht in kg
+  volume?: number; // volume in m3
 }
 
 interface PointInputProps {
