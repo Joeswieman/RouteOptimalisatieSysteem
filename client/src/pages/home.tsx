@@ -564,12 +564,7 @@ export default function Home() {
                           className={`flex items-center gap-3 p-3 border-2 rounded cursor-pointer transition-all ${highlightedVehicle === i ? 'bg-primary/10 border-primary shadow-md scale-105' : 'border-muted hover:border-muted-foreground/50'} ${isOverloaded ? 'border-destructive' : isOverOriginal ? 'border-orange-500' : ''}`}
                           onMouseEnter={() => setSelectedVehicle(i)}
                           onMouseLeave={() => setSelectedVehicle(null)}
-                          onClick={() => {
-                            console.log('🖱️ Klik op voertuig:', i, 'Huidige highlighted:', highlightedVehicle);
-                            const newValue = highlightedVehicle === i ? null : i;
-                            console.log('🎯 Nieuwe highlighted waarde:', newValue);
-                            setHighlightedVehicle(newValue);
-                          }}
+                          onClick={() => setHighlightedVehicle(highlightedVehicle === i ? null : i)}
                         >
                           <div style={{ width: 16, height: 16, background: VEHICLE_COLORS[i % VEHICLE_COLORS.length], borderRadius: 4 }} />
                           <div>

@@ -1,6 +1,6 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import { VEHICLE_COLORS } from "@/lib/colors";
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMapEvents } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMapEvents, useMap } from "react-leaflet";
 import { Point } from "./PointInput";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -145,28 +145,19 @@ export function MapView({ points, route, routeGeometry, vehicleGeometries, selec
               const color = VEHICLE_COLORS[vi % VEHICLE_COLORS.length];
               const isHighlighted = highlightedVehicle === vi;
               const isHovered = selectedVehicle === vi;
-              const isOtherHighlighted = highlightedVehicle !== null && highlightedVehicle !== vi;
-              
-              if (vi === 0) {
-                console.log('🗺️ MapView render - voertuig 0:', { 
-                  highlightedVehicle, 
-                  isHighlighted, 
-                  isOtherHighlighted,
-                  color: isOtherHighlighted ? '#999999' : color,
-                  weight: isHighlighted ? 10 : (isHovered ? 6 : 4),
-                  opacity: isOtherHighlighted ? 0.25 : (isHighlighted ? 1.0 : (isHovered ? 0.95 : 0.85))
-                });
-              }
               
               return (
-                <React.Fragment key={vi}>
+                <React.Fragment key={`vehicle-${vi}-${highlightedVehicle}-${isHighlighted}`}>
                   {vehicleSegments.map((segment, si) => (
                     <Polyline
-                      key={`${vi}-${si}`}
+                      key={`route-${vi}-${si}-${isHighlighted}`}
                       positions={segment}
-                      color={isOtherHighlighted ? '#999999' : color}
-                      weight={isHighlighted ? 10 : (isHovered ? 6 : 4)}
-                      opacity={isOtherHighlighted ? 0.25 : (isHighlighted ? 1.0 : (isHovered ? 0.95 : 0.85))}
+                      pathOptions={{
+                        color: color,
+                        weight: isHighlighted ? 8 : (isHovered ? 6 : 4),
+                        opacity: isHighlighted ? 1.0 : (isHovered ? 0.95 : 0.85),
+                      }}
+                      pane={isHighlighted ? 'overlayPane' : 'shadowPane'}
                       eventHandlers={{
                         mouseover: () => onHoverVehicle && onHoverVehicle(vi),
                         mouseout: () => onHoverVehicle && onHoverVehicle(null),
