@@ -172,6 +172,12 @@ export function RouteResult({ optimizedRoute, totalDistance, totalDuration, segm
       <div className="space-y-3">
         <h3 className="text-lg font-medium">Optimale Volgorde</h3>
         {optimizedRoute.map((point, index) => {
+          // Skip tussenliggende start-end punten (toon alleen eerste en laatste)
+          const isStartEnd = point.id === 'start-end';
+          if (isStartEnd && index > 0 && index < optimizedRoute.length - 1) {
+            return null; // Skip tussenliggende depot stops
+          }
+          
           // Check if arrival time is within time window
           const arrivalTime = perStopArrivals && perStopArrivals[index] ? perStopArrivals[index] : null;
           let isWithinWindow = true;

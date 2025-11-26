@@ -65,6 +65,7 @@ interface MapViewProps {
   showLegendOverlay?: boolean;
   onMapClick?: (lat: number, lng: number) => void;
   highlightedPointId?: string | null;
+  highlightedVehicle?: number | null;
 }
 
 function MapClickHandler({ onMapClick }: { onMapClick?: (lat: number, lng: number) => void }) {
@@ -78,7 +79,7 @@ function MapClickHandler({ onMapClick }: { onMapClick?: (lat: number, lng: numbe
   return null;
 }
 
-export function MapView({ points, route, routeGeometry, vehicleGeometries, selectedVehicle, onHoverVehicle, showLegendOverlay, onMapClick, highlightedPointId }: MapViewProps) {
+export function MapView({ points, route, routeGeometry, vehicleGeometries, selectedVehicle, onHoverVehicle, showLegendOverlay, onMapClick, highlightedPointId, highlightedVehicle }: MapViewProps) {
   const center: [number, number] = [52.1326, 5.2913];
 
   return (
@@ -95,7 +96,12 @@ export function MapView({ points, route, routeGeometry, vehicleGeometries, selec
         />
         <MapClickHandler onMapClick={onMapClick} />
         
-        {points.map((point, index) => {
+        {points.filter(point => {
+          // Filter punten met ongeldige coördinaten
+          const isValid = point.x !== 0 && point.y !== 0;
+          const inNetherlands = point.y >= 50 && point.y <= 54 && point.x >= 3 && point.x <= 8;
+          return isValid && inNetherlands;
+        }).map((point, index) => {
           const isStartEnd = point.id === 'start-end';
           const isHighlighted = point.id === highlightedPointId;
           const markerIcon = isStartEnd ? redDivIcon : (isHighlighted ? goldDivIcon : defaultIcon);
@@ -137,15 +143,30 @@ export function MapView({ points, route, routeGeometry, vehicleGeometries, selec
           <>
             {vehicleGeometries.map((vehicleSegments, vi) => {
               const color = VEHICLE_COLORS[vi % VEHICLE_COLORS.length];
+              const isHighlighted = highlightedVehicle === vi;
+              const isHovered = selectedVehicle === vi;
+              const isOtherHighlighted = highlightedVehicle !== null && highlightedVehicle !== vi;
+              
+              if (vi === 0) {
+                console.log('🗺️ MapView render - voertuig 0:', { 
+                  highlightedVehicle, 
+                  isHighlighted, 
+                  isOtherHighlighted,
+                  color: isOtherHighlighted ? '#999999' : color,
+                  weight: isHighlighted ? 10 : (isHovered ? 6 : 4),
+                  opacity: isOtherHighlighted ? 0.25 : (isHighlighted ? 1.0 : (isHovered ? 0.95 : 0.85))
+                });
+              }
+              
               return (
                 <React.Fragment key={vi}>
                   {vehicleSegments.map((segment, si) => (
                     <Polyline
                       key={`${vi}-${si}`}
                       positions={segment}
-                      color={selectedVehicle === null || selectedVehicle === vi ? color : '#cccccc'}
-                      weight={selectedVehicle === vi ? 6 : 4}
-                      opacity={selectedVehicle === null || selectedVehicle === vi ? 0.9 : 0.4}
+                      color={isOtherHighlighted ? '#999999' : color}
+                      weight={isHighlighted ? 10 : (isHovered ? 6 : 4)}
+                      opacity={isOtherHighlighted ? 0.25 : (isHighlighted ? 1.0 : (isHovered ? 0.95 : 0.85))}
                       eventHandlers={{
                         mouseover: () => onHoverVehicle && onHoverVehicle(vi),
                         mouseout: () => onHoverVehicle && onHoverVehicle(null),

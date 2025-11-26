@@ -1,4 +1,5 @@
 import { Point } from "@/components/PointInput";
+import { optimizeRouteACOTabu } from "./aco-routing";
 
 export interface RouteSegment {
   distance: number;
@@ -434,78 +435,9 @@ function optimizeRouteOrder(points: Point[], startPoint?: Point): Point[] {
   if (points.length === 0) return [];
   if (points.length === 1) return points;
 
-  // Stap 1: Nearest Neighbor voor initiële route
-  const unvisited = [...points];
-  let route: Point[] = [];
+  // Use ACO + Tabu Search for better route optimization
+  console.log('🐜 Using ACO + Tabu Search algorithm...');
+  const optimizedPoints = optimizeRouteACOTabu(points, startPoint);
   
-  let current = startPoint || unvisited.shift()!;
-  if (!startPoint) {
-    route.push(current);
-  }
-
-  while (unvisited.length > 0) {
-    let nearestIndex = 0;
-    let nearestDistance = Infinity;
-
-    for (let i = 0; i < unvisited.length; i++) {
-      const distance = calculateHaversineDistance(
-        current.y, current.x,
-        unvisited[i].y, unvisited[i].x
-      );
-      if (distance < nearestDistance) {
-        nearestDistance = distance;
-        nearestIndex = i;
-      }
-    }
-
-    current = unvisited.splice(nearestIndex, 1)[0];
-    route.push(current);
-  }
-
-  // Stap 2: 2-opt verbetering voor kortere route
-  // Probeer segmenten om te draaien om de totale afstand te verkleinen
-  route = twoOptImprovement(route, startPoint);
-
-  return route;
-}
-
-function twoOptImprovement(route: Point[], startPoint?: Point): Point[] {
-  if (route.length < 3) return route;
-  
-  let improved = true;
-  let bestRoute = [...route];
-  let maxIterations = 100; // Voorkom oneindige loops
-  let iteration = 0;
-
-  while (improved && iteration < maxIterations) {
-    improved = false;
-    iteration++;
-
-    // Voor elk paar segmenten in de route
-    for (let i = 0; i < bestRoute.length - 2; i++) {
-      for (let j = i + 2; j < bestRoute.length; j++) {
-        // Bereken huidige afstand
-        const currentDist = 
-          calculateHaversineDistance(bestRoute[i].y, bestRoute[i].x, bestRoute[i + 1].y, bestRoute[i + 1].x) +
-          calculateHaversineDistance(bestRoute[j].y, bestRoute[j].x, bestRoute[(j + 1) % bestRoute.length]?.y || bestRoute[j].y, bestRoute[(j + 1) % bestRoute.length]?.x || bestRoute[j].x);
-
-        // Bereken nieuwe afstand als we het segment omdraaien
-        const newDist = 
-          calculateHaversineDistance(bestRoute[i].y, bestRoute[i].x, bestRoute[j].y, bestRoute[j].x) +
-          calculateHaversineDistance(bestRoute[i + 1].y, bestRoute[i + 1].x, bestRoute[(j + 1) % bestRoute.length]?.y || bestRoute[i + 1].y, bestRoute[(j + 1) % bestRoute.length]?.x || bestRoute[i + 1].x);
-
-        // Als het korter is, draai het segment om
-        if (newDist < currentDist) {
-          const newRoute = [...bestRoute];
-          // Draai segment tussen i+1 en j om
-          const reversed = newRoute.slice(i + 1, j + 1).reverse();
-          newRoute.splice(i + 1, j - i, ...reversed);
-          bestRoute = newRoute;
-          improved = true;
-        }
-      }
-    }
-  }
-
-  return bestRoute;
+  return optimizedPoints;
 }

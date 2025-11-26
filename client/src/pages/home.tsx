@@ -40,6 +40,7 @@ export default function Home() {
   const [calculationTime, setCalculationTime] = useState(0);
   const [isCalculating, setIsCalculating] = useState(false);
   const [highlightedPointId, setHighlightedPointId] = useState<string | null>(null);
+  const [highlightedVehicle, setHighlightedVehicle] = useState<number | null>(null);
   const { toast } = useToast();
 
   const addPoint = () => {
@@ -115,7 +116,14 @@ export default function Home() {
       });
     });
 
-    const unplannedPoints = points.filter(p => !plannedPointIds.has(p.id));
+    // Filter voor GELDIGE, ongeplande punten
+    const unplannedPoints = points.filter(p => {
+      const notPlanned = !plannedPointIds.has(p.id);
+      const isValid = Number.isFinite(p.x) && Number.isFinite(p.y);
+      const notZero = p.x !== 0 || p.y !== 0;
+      const inNetherlands = p.y >= 50 && p.y <= 54 && p.x >= 3 && p.x <= 8;
+      return notPlanned && isValid && notZero && inNetherlands;
+    });
 
     if (unplannedPoints.length === 0) {
       toast({
@@ -221,8 +229,43 @@ export default function Home() {
       title: "Bijplannen voltooid",
       description: `${addedCount} stop${addedCount !== 1 ? 's' : ''} toegevoegd aan bestaande routes`,
     });
-  };  const handleImportPoints = (importedPoints: Point[]) => {
-    setPoints([...points, ...importedPoints]);
+  };
+
+  const handleImportPoints = (importedPoints: Point[]) => {
+    // Filter imported points to avoid duplicating the depot/start and existing points
+    const EPS = 0.0001; // ~11m tolerance
+    const isSameCoord = (aX: number, aY: number, bX: number, bY: number) => {
+      return Math.abs(aX - bX) <= EPS && Math.abs(aY - bY) <= EPS;
+    };
+
+    const existing = [...points, START_END_LOCATION];
+    const filtered: Point[] = [];
+
+    for (const p of importedPoints) {
+      // skip if matches depot
+      if (isSameCoord(p.x, p.y, START_END_LOCATION.x, START_END_LOCATION.y) || (p.name && p.name === START_END_LOCATION.name)) {
+        console.info(`Import: overslaan depot gelijk adres: ${p.name}`);
+        continue;
+      }
+
+      // skip if near an existing point
+      const already = existing.some(e => isSameCoord(e.x, e.y, p.x, p.y));
+      if (already) {
+        console.info(`Import: overslaan reeds bestaand punt op dezelfde locatie: ${p.name}`);
+        continue;
+      }
+
+      filtered.push(p);
+      existing.push(p);
+    }
+
+    if (filtered.length === 0) {
+      toast({ title: "Geen nieuwe punten toegevoegd", description: "Alle geïmporteerde punten waren duplicaten van bestaande of het depot." });
+      return;
+    }
+
+    setPoints(prev => [...prev, ...filtered]);
+    toast({ title: "Import toegevoegd", description: `${filtered.length} nieuwe stop${filtered.length === 1 ? '' : 's'} toegevoegd` });
   };
 
   const handleVehicleChange = (vehicleId: string, count: number) => {
@@ -240,10 +283,21 @@ export default function Home() {
     const startTime = performance.now();
 
     try {
-      // validate coordinates
-      const invalid = points.find(p => !Number.isFinite(p.x) || !Number.isFinite(p.y));
-      if (invalid) {
-        throw new Error('Controleer punten: alle coördinaten moeten geldige getallen zijn (gebruik "." als decimaal).');
+      // Validate coordinates - filter out invalid points
+      const validPoints = points.filter(p => {
+        const isValid = Number.isFinite(p.x) && Number.isFinite(p.y);
+        const notZero = p.x !== 0 || p.y !== 0;
+        const inNetherlands = p.y >= 50 && p.y <= 54 && p.x >= 3 && p.x <= 8;
+        return isValid && notZero && inNetherlands;
+      });
+
+      const invalidCount = points.length - validPoints.length;
+      if (invalidCount > 0) {
+        console.warn(`⚠️ ${invalidCount} punt(en) met ongeldige coördinaten overgeslagen`);
+      }
+
+      if (validPoints.length === 0) {
+        throw new Error('Geen geldige punten om te routeren. Controleer of alle punten coördinaten hebben in Nederland.');
       }
 
       // Bouw lijst van voertuigen met capaciteiten
@@ -267,7 +321,7 @@ export default function Home() {
 
       // Als er voertuigen geselecteerd zijn, gebruik capaciteits-bewuste routing
       if (vehicleCapacities.length > 0) {
-        const multi = await calculateOptimalRoutesWithCapacity([...points], vehicleCapacities, vehicleNames, START_END_LOCATION);
+        const multi = await calculateOptimalRoutesWithCapacity(validPoints, vehicleCapacities, vehicleNames, START_END_LOCATION);
         const endTime = performance.now();
 
         setMultiRoutes(multi.routes);
@@ -297,12 +351,12 @@ export default function Home() {
           title: `Rondrit berekend voor ${vehicleCapacities.length} voertuigen`,
           description: overloaded 
             ? `⚠️ Waarschuwing: Sommige voertuigen zijn overbeladen!`
-            : `${multi.totalDistance.toFixed(1)} km • gemiddelde tijd: ${Math.round(multi.meanDuration/60)} min`,
+            : `${multi.totalDistance.toFixed(1)} km • gemiddelde tijd: ${Math.round(multi.meanDuration/60)} min${invalidCount > 0 ? ` • ${invalidCount} punt(en) overgeslagen` : ''}`,
           variant: overloaded ? "destructive" : "default",
         });
       } else {
         // Geen voertuigen geselecteerd, gebruik single-route
-        const result = await calculateOptimalRoute([...points], START_END_LOCATION);
+        const result = await calculateOptimalRoute(validPoints, START_END_LOCATION);
         const endTime = performance.now();
 
         setOptimizedRoute(result.route);
@@ -317,7 +371,7 @@ export default function Home() {
         const durationMinutes = Math.round(result.totalDuration / 60);
         toast({
           title: "Rondrit berekend!",
-          description: `${result.totalDistance.toFixed(1)} km • ${durationMinutes} min • Start & eind: ${START_END_LOCATION.name}`,
+          description: `${result.totalDistance.toFixed(1)} km • ${durationMinutes} min${invalidCount > 0 ? ` • ${invalidCount} punt(en) overgeslagen` : ''}`,
         });
       }
     } catch (error) {
@@ -507,10 +561,15 @@ export default function Home() {
                       return (
                         <div
                           key={`legend-${i}`}
-                          className={`flex items-center gap-3 p-2 border rounded cursor-pointer ${selectedVehicle === i ? 'bg-muted/20 border-primary' : ''} ${isOverloaded ? 'border-destructive' : isOverOriginal ? 'border-orange-500' : ''}`}
+                          className={`flex items-center gap-3 p-3 border-2 rounded cursor-pointer transition-all ${highlightedVehicle === i ? 'bg-primary/10 border-primary shadow-md scale-105' : 'border-muted hover:border-muted-foreground/50'} ${isOverloaded ? 'border-destructive' : isOverOriginal ? 'border-orange-500' : ''}`}
                           onMouseEnter={() => setSelectedVehicle(i)}
                           onMouseLeave={() => setSelectedVehicle(null)}
-                          onClick={() => setSelectedVehicle(selectedVehicle === i ? null : i)}
+                          onClick={() => {
+                            console.log('🖱️ Klik op voertuig:', i, 'Huidige highlighted:', highlightedVehicle);
+                            const newValue = highlightedVehicle === i ? null : i;
+                            console.log('🎯 Nieuwe highlighted waarde:', newValue);
+                            setHighlightedVehicle(newValue);
+                          }}
                         >
                           <div style={{ width: 16, height: 16, background: VEHICLE_COLORS[i % VEHICLE_COLORS.length], borderRadius: 4 }} />
                           <div>
@@ -570,6 +629,7 @@ export default function Home() {
               showLegendOverlay={showLegendOverlay}
               onMapClick={addPointFromMap}
               highlightedPointId={highlightedPointId}
+              highlightedVehicle={highlightedVehicle}
             />
           </div>
         </div>
