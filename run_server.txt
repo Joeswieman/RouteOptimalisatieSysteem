@@ -1,5 +1,5 @@
 set NODE_ENV=development&& npx tsx server/index.ts
-http://127.0.0.1:5000
+http://127.0.0.1:5000c
 cd C:\Users\Gebruiker\OneDrive\Documenten\GitHub\RouteOptimalisatieSysteem
 $env:NODE_ENV='development'; node --import tsx server/index.ts
 POwershell bovenste voor CMD
