@@ -1,6 +1,7 @@
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { MoveRight, CheckCircle2, Clock } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { MoveRight, CheckCircle2, Clock, Navigation, ChevronRight } from "lucide-react";
 import { Point } from "./PointInput";
 import { useMemo, useState } from "react";
 
@@ -102,6 +103,46 @@ export function RouteResult({ optimizedRoute, totalDistance, totalDuration, segm
     }
     return { arrivalString: arrStr, departureString: depStr, departureTime: depTime, departureDate: depDate, arrivalTime: arrTime, arrivalDate: arrDate, perStopArrivals: arrivals };
   }, [departure, totalDuration, segments, optimizedRoute]);
+
+  // Generate Google Maps route segments (max 10 stops per segment)
+  const googleMapsSegments = useMemo(() => {
+    const maxStopsPerSegment = 10; // Google Maps maximum
+    const segmentData: { startIndex: number; endIndex: number; url: string; stopCount: number }[] = [];
+
+    // Split route into overlapping segments
+    let currentIndex = 0;
+    while (currentIndex < optimizedRoute.length - 1) {
+      const endIndex = Math.min(currentIndex + maxStopsPerSegment - 1, optimizedRoute.length - 1);
+      const segmentPoints = optimizedRoute.slice(currentIndex, endIndex + 1);
+
+      if (segmentPoints.length >= 2) {
+        const origin = `${segmentPoints[0].y},${segmentPoints[0].x}`;
+        const destination = `${segmentPoints[segmentPoints.length - 1].y},${segmentPoints[segmentPoints.length - 1].x}`;
+        
+        const waypoints = segmentPoints
+          .slice(1, -1)
+          .map(p => `${p.y},${p.x}`)
+          .join("|");
+
+        let url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
+        if (waypoints) {
+          url += `&waypoints=${waypoints}`;
+        }
+
+        segmentData.push({
+          startIndex: currentIndex,
+          endIndex: endIndex,
+          url: url,
+          stopCount: segmentPoints.length
+        });
+      }
+
+      // Move to next segment (overlap by 1 stop for continuity)
+      currentIndex = endIndex;
+    }
+
+    return segmentData;
+  }, [optimizedRoute]);
   
   return (
     <div className="space-y-6">
@@ -168,6 +209,66 @@ export function RouteResult({ optimizedRoute, totalDistance, totalDuration, segm
           </div>
         </div>
       </Card>
+
+      {/* Google Maps Navigatie Sectie */}
+      {googleMapsSegments.length > 0 && (
+        <Card className="p-4 bg-blue-50 dark:bg-blue-950/20">
+          <div className="flex items-center gap-2 mb-3">
+            <Navigation className="h-5 w-5 text-blue-600" />
+            <h4 className="font-medium">Google Maps Navigatie</h4>
+          </div>
+          
+          {googleMapsSegments.length === 1 ? (
+            <Button
+              onClick={() => window.open(googleMapsSegments[0].url, "_blank")}
+              className="w-full bg-blue-600 hover:bg-blue-700"
+            >
+              <Navigation className="mr-2 h-4 w-4" />
+              Open Route in Google Maps ({optimizedRoute.length} stops)
+            </Button>
+          ) : (
+            <div className="space-y-3">
+              <div className="bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded-md p-3 mb-3">
+                <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                  ⚠️ Route heeft {optimizedRoute.length} stops - Google Maps ondersteunt max 10 stops per route.
+                </p>
+                <p className="text-xs text-yellow-700 dark:text-yellow-300 mt-1">
+                  💡 Rijd eerst Segment 1, open daarna Segment 2, etc. Elk segment start waar het vorige eindigt.
+                </p>
+              </div>
+              
+              {googleMapsSegments.map((seg, idx) => {
+                const isLastSegment = idx === googleMapsSegments.length - 1;
+                return (
+                  <div key={idx} className="space-y-2">
+                    <Button
+                      onClick={() => window.open(seg.url, "_blank")}
+                      variant="outline"
+                      className="w-full justify-between hover:bg-blue-100 dark:hover:bg-blue-950"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Badge className="bg-blue-600 text-white">Segment {idx + 1}</Badge>
+                        <span className="font-mono text-sm">
+                          Stop {seg.startIndex + 1} → Stop {seg.endIndex + 1}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          ({seg.stopCount} stops)
+                        </span>
+                      </div>
+                      <Navigation className="h-4 w-4" />
+                    </Button>
+                    {!isLastSegment && (
+                      <div className="flex justify-center">
+                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Card>
+      )}
 
       <div className="space-y-3">
         <h3 className="text-lg font-medium">Optimale Volgorde</h3>
